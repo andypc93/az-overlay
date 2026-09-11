@@ -30,9 +30,9 @@ def test_config_labels_are_all_resolvable():
     with open(os.path.join(os.path.dirname(__file__), "config.json"), encoding="utf-8") as f:
         cfg = json.load(f)
     for k in cfg["keys"]:
-        overlay.vks_for_label(k["label"])
+        overlay.pad_inputs(k)
     for d in ("up", "down", "left", "right"):
-        assert overlay.vks_for_label(cfg["joystick"][d])
+        assert overlay.vks_for_label(cfg["sticks"][0][d])
 
 
 def test_label_roundtrip():
@@ -63,3 +63,69 @@ def test_profile_name_sanitised(tmp_path, monkeypatch):
     assert overlay.list_profiles() == ["abc"]
     with pytest.raises(ValueError):
         overlay.save_profile("///", overlay.load_config())
+
+
+def test_parse_input_chord_and_alternatives():
+    chord = overlay.parse_input("Ctrl+Shift+K")
+    assert len(chord) == 1 and len(chord[0]) == 3
+    assert overlay.input_matches(chord, {0xA2, 0xA0, ord("K")})
+    assert not overlay.input_matches(chord, {0xA2, ord("K")})
+    macro = overlay.parse_input("F5, F6")
+    assert overlay.input_matches(macro, {0x75}) and overlay.input_matches(macro, {0x74})
+    assert overlay.input_matches(overlay.parse_input("gp:a"), {"gp:a"})
+    with pytest.raises(ValueError):
+        overlay.parse_input("gp:nope")
+
+
+def test_scancode_resolves_on_windows():
+    assert overlay.tokens_for_scancode(0x1E) == {ord("A")}
+    assert 0xA3 in overlay.tokens_for_scancode(0xE01D)
+    assert overlay.tokens_for_scancode(0xE11D) == {0x13}
+
+
+def test_macro_pad_uses_input_not_label():
+    entry = {"label": "Heal macro", "input": "F5, F6", "col": 0, "row": 0}
+    assert overlay.input_matches(overlay.pad_inputs(entry), {0x75})
+
+
+def test_migrate_old_joystick():
+    cfg = {"keys": [{"label": "Q", "col": 0, "row": 0}],
+           "joystick": {"col": 6, "row": 3, "cols": 2, "rows": 2, "up": "W", "left": "A", "down": "S", "right": "D"}}
+    overlay.migrate(cfg)
+    assert "joystick" not in cfg and cfg["sticks"][0]["up"] == "W" and cfg["keys"][0]["w"] == 1
+
+
+def test_templates_build_and_resolve():
+    import templates
+    for dev in templates.DEVICES:
+        for tpl in templates.templates_for(dev):
+            for lay in templates.layouts_for(dev) or [None]:
+                prof = templates.build(dev, tpl, lay)
+                assert prof["keys"], (dev, tpl, lay)
+                for k in prof["keys"]:
+                    overlay.pad_inputs(k)  # must not raise
+                for st in prof["sticks"]:
+                    for d in ("up", "down", "left", "right"):
+                        if st.get(d):
+                            overlay.parse_input(st[d])
+
+
+def test_keyboard_key_counts():
+    import templates
+    counts = {name: len(templates.build("Keyboard", name, "US (ANSI)")["keys"]) for name, _ in templates.KEYBOARDS}
+    assert counts["100% Full size"] == 104
+    assert counts["80% TKL"] == 87
+    assert counts["65% Compact"] == 68
+    assert counts["75% Compact"] == 84
+    assert len(templates.build("Keyboard", "100% Full size", "German (ISO)")["keys"]) == 105
+
+
+def test_keyboard_keys_do_not_overlap():
+    import templates
+    for name, _ in templates.KEYBOARDS:
+        keys = templates.build("Keyboard", name, "UK (ISO)")["keys"]
+        boxes = [(k["col"], k["row"], k["col"] + k["w"], k["row"] + k["h"], k["label"]) for k in keys]
+        for i, a in enumerate(boxes):
+            for b in boxes[i + 1:]:
+                overlap = a[0] < b[2] - 1e-6 and b[0] < a[2] - 1e-6 and a[1] < b[3] - 1e-6 and b[1] < a[3] - 1e-6
+                assert not overlap, (name, a, b)

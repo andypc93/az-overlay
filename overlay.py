@@ -1,8 +1,9 @@
-"""Transparent, click-through key overlay for the Azeron Cyborg 2.
+"""AZ-Overlay: transparent, click-through input overlay for the Azeron Cyborg 2,
+keyboards, and Xbox / PlayStation controllers.
 
 Qt (PySide6) window: frameless, always on top, transparent background, mouse
-events pass through to the game. A global keyboard hook (pynput) lights keys
-while held; releases fade out smoothly.
+events pass through to the game. A global keyboard hook (pynput) plus SDL
+game-controller polling light pads while they are held; releases fade out.
 
 A tray icon opens the Settings window (see settings_ui.py) where layout, keys,
 colors, position and scale are edited live and saved to config.json.
@@ -11,6 +12,7 @@ Hotkeys: Ctrl+Alt+O toggles visibility, Ctrl+Alt+S opens settings,
 Ctrl+Alt+Q quits (editable in config).
 """
 
+import ctypes
 import json
 import os
 import queue
@@ -22,6 +24,10 @@ from pynput import keyboard
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
+
+from gamepad import Gamepad, is_gamepad_input
+
+APP_NAME = "AZ-Overlay"
 
 FROZEN = getattr(sys, "frozen", False)
 _HERE = os.path.dirname(sys.executable if FROZEN else os.path.abspath(__file__))
@@ -35,10 +41,11 @@ else:
     _BASE = _HERE
 CONFIG_PATH = os.path.join(_BASE, "config.json")
 PROFILE_DIR = os.path.join(_BASE, "profiles")
+LOGO_PATH = os.path.join(_DEFAULTS, "assets", "logo_256.png")
 
 
 def ensure_user_data():
-    """First run: seed %APPDATA%\az-overlay from the bundled defaults (or from
+    """First run: seed %APPDATA%\\az-overlay from the bundled defaults (or from
     files next to the exe, for installs that used to keep them there)."""
     if not FROZEN:
         return
@@ -56,12 +63,17 @@ def ensure_user_data():
                         shutil.copy(os.path.join(src, f), os.path.join(PROFILE_DIR, f))
                 break
 
-# What a saved layout profile carries (hotkeys stay global in config.json).
-PROFILE_KEYS = ("x", "y", "scale", "opacity", "cell_w", "cell_h", "gap",
-                "colors", "font", "keys", "joystick")
 
-# Canonical label -> Windows virtual-key codes. First entry is the one shown
-# when a key is captured from the keyboard.
+# What a saved layout profile carries (hotkeys stay global in config.json).
+PROFILE_KEYS = ("x", "y", "scale", "opacity", "cell_w", "cell_h", "gap", "shape",
+                "colors", "font", "keys", "sticks")
+
+# ---------------------------------------------------------------------------
+# Input tokens. A pad is lit when its input is held. Tokens are either Windows
+# virtual-key codes (int) or gamepad ids ("gp:a"). Keyboard keys can be given
+# by name ("Page Up"), or physically by scancode (templates do this so the
+# highlight follows the key position on any Windows layout).
+# ---------------------------------------------------------------------------
 VK_BY_LABEL = {
     "Alt": [0x12, 0xA4, 0xA5],
     "Shift": [0x10, 0xA0, 0xA1],
@@ -92,6 +104,8 @@ VK_BY_LABEL = {
     ";": [0xBA], "=": [0xBB], ",": [0xBC], "-": [0xBD], ".": [0xBE], "/": [0xBF],
     "`": [0xC0], "[": [0xDB], "\\": [0xDC], "]": [0xDD], "'": [0xDE],
     "Num *": [0x6A], "Num +": [0x6B], "Num -": [0x6D], "Num .": [0x6E], "Num /": [0x6F],
+    "Mouse Left": [0x01], "Mouse Right": [0x02], "Mouse Middle": [0x04],
+    "Mouse 4": [0x05], "Mouse 5": [0x06],
 }
 VK_BY_LABEL.update({f"F{n}": [0x6F + n] for n in range(1, 25)})
 VK_BY_LABEL.update({f"Num {n}": [0x60 + n] for n in range(10)})
@@ -107,22 +121,65 @@ for _ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789":
 CTRL_VKS = {0x11, 0xA2, 0xA3}
 ALT_VKS = {0x12, 0xA4, 0xA5}
 
+GAMEPAD_LABELS = {
+    "gp:a": "A", "gp:b": "B", "gp:x": "X", "gp:y": "Y", "gp:back": "View", "gp:start": "Menu",
+    "gp:guide": "Guide", "gp:leftstick": "LS", "gp:rightstick": "RS", "gp:leftshoulder": "LB",
+    "gp:rightshoulder": "RB", "gp:dpup": "▲", "gp:dpdown": "▼", "gp:dpleft": "◀",
+    "gp:dpright": "▶", "gp:misc1": "Share", "gp:touchpad": "Touchpad",
+    "gp:lefttrigger": "LT", "gp:righttrigger": "RT",
+}
 
-def vks_for_label(label):
-    """Return the set of virtual-key codes that light up a given label."""
-    key = label.strip()
+
+def _token_for_name(name):
+    """One key name -> set of tokens. Raises ValueError for unknown names."""
+    key = name.strip()
     if not key:
         return set()
+    if is_gamepad_input(key):
+        if key in GAMEPAD_LABELS:
+            return {key}
+        raise ValueError(f"Unknown controller input: {key!r}")
     if key.lower() in _LOWER:
         return set(_LOWER[key.lower()])
     if len(key) == 1 and key.isalnum():
         return {ord(key.upper())}  # VK_A..VK_Z / VK_0..VK_9 equal ASCII uppercase
-    raise ValueError(f"Unknown key label: {label!r}")
+    raise ValueError(f"Unknown key name: {name!r}")
+
+
+def parse_input(text):
+    """Input expression -> list of alternatives, each a list of token-sets.
+
+    "F5"             lit while F5 is held
+    "F5, F6"         lit while F5 or F6 is held (a macro that sends several keys)
+    "Ctrl+Shift+K"   lit while all three are held (a chord)
+    """
+    alts = []
+    for alt in text.split(","):
+        chord = [_token_for_name(part) for part in alt.split("+") if part.strip()]
+        chord = [c for c in chord if c]
+        if chord:
+            alts.append(chord)
+    return alts
+
+
+def vks_for_label(label):
+    """Compatibility helper: the set of tokens that light a plain label."""
+    tokens = set()
+    for chord in parse_input(label):
+        for group in chord:
+            tokens |= group
+    return tokens
 
 
 def label_for_vk(vk):
     """Human label for a virtual-key code, or None if we don't know it."""
     return LABEL_BY_VK.get(vk)
+
+
+def label_for_token(token):
+    if is_gamepad_input(token):
+        return GAMEPAD_LABELS.get(token, token)
+    return label_for_vk(token)
 
 
 def vk_of(key):
@@ -133,6 +190,50 @@ def vk_of(key):
     return vk
 
 
+_MAPVK_VSC_TO_VK_EX = 3
+_SC_FIXED = {0xE11D: {0x13}}  # Pause never round-trips through MapVirtualKey
+
+
+def tokens_for_scancode(sc):
+    """Physical key -> virtual-key(s) under the active Windows layout."""
+    if sc in _SC_FIXED:
+        return set(_SC_FIXED[sc])
+    if os.name != "nt":
+        return set()
+    vk = ctypes.windll.user32.MapVirtualKeyW(sc, _MAPVK_VSC_TO_VK_EX)
+    if not vk and sc > 0xFF:  # older Windows: strip the extended prefix
+        vk = ctypes.windll.user32.MapVirtualKeyW(sc & 0xFF, _MAPVK_VSC_TO_VK_EX)
+    if not vk:
+        return set()
+    out = {vk}
+    # The hook reports left/right variants; also accept the generic code.
+    if vk in (0xA0, 0xA1):
+        out.add(0x10)
+    elif vk in (0xA2, 0xA3):
+        out.add(0x11)
+    elif vk in (0xA4, 0xA5):
+        out.add(0x12)
+    return out
+
+
+def pad_inputs(entry):
+    """Resolve a key entry to its alternatives (see parse_input)."""
+    if "sc" in entry and entry.get("input") is None:
+        toks = tokens_for_scancode(entry["sc"])
+        return [[toks]] if toks else []
+    text = entry.get("input")
+    if text is None:
+        text = entry.get("label", "")
+    return parse_input(text)
+
+
+def input_matches(alts, pressed):
+    for chord in alts:
+        if all(group & pressed for group in chord):
+            return True
+    return False
+
+
 DEFAULT_COLORS = {
     "idle_fill": "#1e1e1e",
     "idle_outline": "#c9d400",
@@ -141,21 +242,47 @@ DEFAULT_COLORS = {
     "pressed_outline": "#c9d400",
     "pressed_text": "#000000",
 }
-
-
 DEFAULT_FONT = {"family": "Segoe UI", "size": 13, "bold": True}
+
+
+def migrate(cfg):
+    """Bring older config / profile dicts up to the current shape (in place)."""
+    cfg.setdefault("colors", {})
+    for k, v in DEFAULT_COLORS.items():
+        cfg["colors"].setdefault(k, v)
+    cfg.setdefault("font", {})
+    for k, v in DEFAULT_FONT.items():
+        cfg["font"].setdefault(k, v)
+    cfg.setdefault("shape", "rect")
+    for k in cfg.get("keys", []):
+        k.setdefault("w", 1)
+        k.setdefault("h", 1)
+    sticks = cfg.setdefault("sticks", [])
+    if "joystick" in cfg:  # single thumbstick from the first versions
+        j = cfg.pop("joystick")
+        if j.get("enabled", True):
+            sticks.insert(0, {
+                "label": "Left Stick", "col": j.get("col", 6), "row": j.get("row", 3),
+                "w": j.get("cols", 2), "h": j.get("rows", 2),
+                "up": j.get("up", "W"), "down": j.get("down", "S"),
+                "left": j.get("left", "A"), "right": j.get("right", "D"),
+                "axes": ["gp:leftx", "gp:lefty"], "click": "gp:leftstick",
+            })
+    for s in sticks:
+        s.setdefault("w", 2)
+        s.setdefault("h", 2)
+        s.setdefault("label", "")
+    return cfg
 
 
 def load_config():
     with open(CONFIG_PATH, encoding="utf-8") as f:
         cfg = json.load(f)
-    cfg.setdefault("colors", {})
-    for k, v in DEFAULT_COLORS.items():
-        cfg["colors"].setdefault(k, v)
-    cfg.setdefault("hotkeys", {}).setdefault("settings", "S")
-    cfg.setdefault("font", {})
-    for k, v in DEFAULT_FONT.items():
-        cfg["font"].setdefault(k, v)
+    migrate(cfg)
+    cfg.setdefault("hotkeys", {})
+    cfg["hotkeys"].setdefault("toggle", "O")
+    cfg["hotkeys"].setdefault("settings", "S")
+    cfg["hotkeys"].setdefault("quit", "Q")
     return cfg
 
 
@@ -182,7 +309,7 @@ def list_profiles():
 
 def load_profile(name):
     with open(_profile_path(name), encoding="utf-8") as f:
-        return json.load(f)
+        return migrate(json.load(f))
 
 
 def save_profile(name, cfg):
@@ -201,38 +328,58 @@ def delete_profile(name):
 
 
 class Pad:
-    """One drawable element: a key cell or a joystick direction."""
+    """One drawable element: a key, a controller button, or a stick direction."""
 
-    def __init__(self, label, rect, vks, shape="rect", source=None):
+    def __init__(self, label, rect, alts, shape="rect", source=None, axis=None):
         self.label = label
         self.rect = rect
-        self.vks = vks
-        self.shape = shape
-        self.source = source  # ("key", index) or ("joy", "up"|"down"|"left"|"right")
+        self.alts = alts  # from parse_input
+        self.shape = shape  # "rect" | "circle" | "dot"
+        self.source = source  # ("key", index) or ("stick", index, "up"|"down"|"left"|"right")
+        self.axis = axis  # analog input id whose value drives level (triggers)
         self.level = 0.0  # 0 idle .. 1 fully lit
         self.text_pos = None
+
+    def bound(self):
+        return bool(self.alts)
+
+
+class Stick:
+    """Thumbstick / d-pad: ring, knob (moved by axes), optional direction dots."""
+
+    def __init__(self, rect, spec, index):
+        self.rect = rect
+        self.spec = spec
+        self.index = index
+        self.axes = spec.get("axes") or []
+        self.click = parse_input(spec.get("click", "")) if spec.get("click") else []
+        self.offset = QPointF(0, 0)
+        self.level = 0.0
 
 
 class Overlay(QWidget):
     FADE_MS = 140
     SCALE_MIN, SCALE_MAX = 0.2, 3.0
 
-    config_changed = Signal()  # emitted when the overlay itself edits cfg (drag / wheel)
-    key_captured = Signal(int)  # vk of the next key pressed while capturing
+    config_changed = Signal()  # emitted when the overlay itself edits cfg (drag / wheel / rebind)
+    key_captured = Signal(object)  # token of the next input pressed while capturing
     open_settings = Signal()
 
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
         self.pressed = set()
+        self.axes = {}
         self.events = queue.Queue()
         self.pads = []
-        self.static = []
+        self.sticks = []
         self.edit_mode = False
         self.capturing = False
         self.capture_pad = None  # pad being rebound by clicking it in edit mode
         self._drag_origin = None
         self._press_pos = None
+        self.gamepad = Gamepad()
+        self._gp_pressed = set()
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -268,67 +415,67 @@ class Overlay(QWidget):
         self.cw = cfg["cell_w"] * s
         self.ch = cfg["cell_h"] * s
         self.gap = cfg["gap"] * s
-        self.radius = 10 * s
+        self.radius = min(10 * s, self.cw * 0.2, self.ch * 0.2)
         fnt = cfg.get("font", DEFAULT_FONT)
         self.font = QFont(fnt.get("family", "Segoe UI"), max(4, int(fnt.get("size", 13) * s)),
                           QFont.Weight.Bold if fnt.get("bold", True) else QFont.Weight.Normal)
+        self.col = {k: QColor(v) for k, v in cfg["colors"].items()}
 
-        c = cfg["colors"]
-        self.col = {k: QColor(v) for k, v in c.items()}
-
-        old = {p.label: p.level for p in self.pads}
-        self.pads, self.static = [], []
+        old = {p.source: p.level for p in self.pads}
+        self.pads, self.sticks = [], []
         self.build()
         for p in self.pads:
-            p.level = old.get(p.label, 0.0)
+            p.level = old.get(p.source, 0.0)
 
-        self.hotkeys = {
-            name: vks_for_label(cfg["hotkeys"].get(name, ""))
-            for name in ("toggle", "quit", "settings")
-        }
-        self.setWindowOpacity(cfg.get("opacity", 0.85))
+        self.hotkeys = {name: vks_for_label(cfg["hotkeys"].get(name, ""))
+                        for name in ("toggle", "quit", "settings")}
+        if not self.edit_mode:
+            self.setWindowOpacity(cfg.get("opacity", 0.85))
         w, h = self.extent()
         self.setGeometry(cfg["x"], cfg["y"], int(w), int(h))
         self.update()
 
-    def cell_rect(self, col, row, cols=1, rows=1):
+    def cell_rect(self, col, row, w=1, h=1):
         x0 = col * (self.cw + self.gap) + 2
         y0 = row * (self.ch + self.gap) + 2
-        w = cols * self.cw + (cols - 1) * self.gap
-        h = rows * self.ch + (rows - 1) * self.gap
-        return QRectF(x0, y0, w, h)
+        return QRectF(x0, y0, w * (self.cw + self.gap) - self.gap, h * (self.ch + self.gap) - self.gap)
 
     def extent(self):
-        rects = [p.rect for p in self.pads] + [r for r, _ in self.static]
+        rects = [p.rect for p in self.pads if p.source and p.source[0] == "key"] + [s.rect for s in self.sticks]
         if not rects:
             return 40, 40
         return max(r.right() for r in rects) + 4, max(r.bottom() for r in rects) + 4
 
     def build(self):
+        default_shape = self.cfg.get("shape", "rect")
         for i, k in enumerate(self.cfg["keys"]):
             try:
-                vks = vks_for_label(k["label"])
+                alts = pad_inputs(k)
             except ValueError:
-                vks = set()
-            self.pads.append(Pad(k["label"], self.cell_rect(k["col"], k["row"]), vks, source=("key", i)))
+                alts = []
+            rect = self.cell_rect(k["col"], k["row"], k.get("w", 1), k.get("h", 1))
+            self.pads.append(Pad(k["label"], rect, alts, shape=k.get("shape", default_shape),
+                                 source=("key", i), axis=k.get("axis")))
 
-        j = self.cfg.get("joystick")
-        if j and j.get("enabled", True):
-            box = self.cell_rect(j["col"], j["row"], j.get("cols", 2), j.get("rows", 2))
-            self.static.append((box, "box"))
-            cx, cy = box.center().x(), box.center().y()
-            rad = min(box.width(), box.height()) * 0.30
-            self.static.append((QRectF(cx - rad, cy - rad, 2 * rad, 2 * rad), "ring"))
+        for i, spec in enumerate(self.cfg.get("sticks", [])):
+            rect = self.cell_rect(spec["col"], spec["row"], spec.get("w", 2), spec.get("h", 2))
+            stick = Stick(rect, spec, i)
+            self.sticks.append(stick)
+            cx, cy = rect.center().x(), rect.center().y()
+            rad = min(rect.width(), rect.height()) * 0.30
             dot_r = rad * 0.30
             for name, dx, dy in (("up", 0, -1), ("down", 0, 1), ("left", -1, 0), ("right", 1, 0)):
-                label = j.get(name, "")
+                inp = spec.get(name)
+                if not inp:
+                    continue
                 try:
-                    vks = vks_for_label(label)
+                    alts = parse_input(inp)
                 except ValueError:
-                    vks = set()
+                    alts = []
                 px, py = cx + dx * rad * 0.62, cy + dy * rad * 0.62
-                pad = Pad(label, QRectF(px - dot_r, py - dot_r, 2 * dot_r, 2 * dot_r), vks,
-                          shape="dot", source=("joy", name))
+                label = spec.get(name + "_label") or (GAMEPAD_LABELS.get(inp, inp) if is_gamepad_input(inp) else inp)
+                pad = Pad(label, QRectF(px - dot_r, py - dot_r, 2 * dot_r, 2 * dot_r), alts,
+                          shape="dot", source=("stick", i, name))
                 pad.text_pos = QPointF(cx + dx * rad * 1.4, cy + dy * rad * 1.4)
                 self.pads.append(pad)
 
@@ -342,42 +489,56 @@ class Overlay(QWidget):
             int(a.alpha() + (b.alpha() - a.alpha()) * t),
         )
 
+    def _draw_shape(self, p, pad):
+        if pad.shape == "rect":
+            p.drawRoundedRect(pad.rect, self.radius, self.radius)
+        else:
+            p.drawEllipse(pad.rect)
+
     def paintEvent(self, _event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setFont(self.font)
         c = self.col
 
-        for rect, kind in self.static:
-            p.setBrush(QBrush(c["idle_fill"]) if kind == "box" else Qt.BrushStyle.NoBrush)
+        for st in self.sticks:
+            p.setBrush(QBrush(c["idle_fill"]))
             p.setPen(QPen(c["idle_outline"], 1.2))
-            if kind == "box":
-                p.drawRoundedRect(rect, self.radius, self.radius)
-            else:
-                p.drawEllipse(rect)
+            p.drawRoundedRect(st.rect, self.radius, self.radius)
+            cx, cy = st.rect.center().x(), st.rect.center().y()
+            rad = min(st.rect.width(), st.rect.height()) * 0.30
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QRectF(cx - rad, cy - rad, 2 * rad, 2 * rad))
+            if st.axes:  # analog knob
+                kx, ky = cx + st.offset.x() * rad * 0.6, cy + st.offset.y() * rad * 0.6
+                kr = rad * 0.42
+                p.setBrush(QBrush(self.mix(c["idle_outline"], c["pressed_fill"], st.level)))
+                p.setPen(QPen(self.mix(c["idle_outline"], c["pressed_outline"], st.level), 1.2))
+                p.drawEllipse(QRectF(kx - kr, ky - kr, 2 * kr, 2 * kr))
+            if st.spec.get("label"):
+                p.setPen(c["idle_text"])
+                p.setFont(QFont(self.font.family(), max(4, int(self.font.pointSize() * 0.75))))
+                p.drawText(st.rect.adjusted(6, 4, -6, -4), Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight,
+                           st.spec["label"])
+                p.setFont(self.font)
 
         for pad in self.pads:
             if pad is self.capture_pad:
                 hot = QColor(c["pressed_outline"])
                 p.setBrush(QBrush(QColor(hot.red(), hot.green(), hot.blue(), 60)))
                 p.setPen(QPen(hot, 2, Qt.PenStyle.DashLine))
-                if pad.shape == "rect":
-                    p.drawRoundedRect(pad.rect, self.radius, self.radius)
+                self._draw_shape(p, pad)
+                if pad.shape != "dot":
                     p.setPen(hot)
                     p.drawText(pad.rect, Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, "press\na key")
-                else:
-                    p.drawEllipse(pad.rect)
                 continue
-            if not pad.label:
+            if not pad.label and not pad.bound():
                 if self.edit_mode:  # show unassigned pads faintly so they can be clicked and bound
                     ghost = QColor(c["idle_outline"])
                     ghost.setAlpha(90)
                     p.setBrush(Qt.BrushStyle.NoBrush)
                     p.setPen(QPen(ghost, 1, Qt.PenStyle.DashLine))
-                    if pad.shape == "rect":
-                        p.drawRoundedRect(pad.rect, self.radius, self.radius)
-                    else:
-                        p.drawEllipse(pad.rect)
+                    self._draw_shape(p, pad)
                 continue
 
             t = pad.level
@@ -391,31 +552,28 @@ class Overlay(QWidget):
                     glow.setAlphaF(0.18 * t / (i + 1))
                     p.setPen(QPen(glow, spread * 2))
                     p.setBrush(Qt.BrushStyle.NoBrush)
-                    if pad.shape == "rect":
-                        p.drawRoundedRect(pad.rect, self.radius, self.radius)
-                    else:
-                        p.drawEllipse(pad.rect)
+                    self._draw_shape(p, pad)
 
             p.setBrush(QBrush(fill))
             p.setPen(QPen(outline, 1.2 + t))
-            if pad.shape == "rect":
-                p.drawRoundedRect(pad.rect, self.radius, self.radius)
-                p.setPen(text)
-                p.drawText(pad.rect, Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, pad.label)
-            else:
-                p.drawEllipse(pad.rect)
+            self._draw_shape(p, pad)
+            if pad.shape == "dot":
                 p.setPen(self.mix(c["idle_text"], c["pressed_outline"], t))
                 fm = p.fontMetrics()
                 tw = fm.horizontalAdvance(pad.label)
                 p.drawText(QPointF(pad.text_pos.x() - tw / 2, pad.text_pos.y() + fm.ascent() / 2 - 1), pad.label)
+            else:
+                p.setPen(text)
+                p.drawText(pad.rect.adjusted(2, 1, -2, -1),
+                           Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, pad.label)
 
         if self.edit_mode:
             frame = QColor(c["pressed_outline"])
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(frame, 2, Qt.PenStyle.DashLine))
             p.drawRect(self.rect().adjusted(1, 1, -2, -2))
-            hint = ("drag: move  \u00b7  wheel: resize  \u00b7  click a key, then press its button: rebind  "
-                    "\u00b7  right-click: clear")
+            hint = ("drag: move  ·  wheel: resize  ·  click a key, then press its button: rebind  "
+                    "·  right-click: clear")
             p.setFont(QFont("Segoe UI", 9))
             flags = Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap
             avail = QRectF(6, 8, self.width() - 12, self.height() - 12)
@@ -428,7 +586,7 @@ class Overlay(QWidget):
             p.drawText(need, flags, hint)
         p.end()
 
-    # ---- edit mode: drag to move, wheel to scale -----------------------
+    # ---- edit mode: drag to move, wheel to scale, click to rebind -------
     def set_edit_mode(self, on):
         if on == self.edit_mode:
             return
@@ -462,7 +620,7 @@ class Overlay(QWidget):
             self.capture_pad = None
             self.capturing = False
             if pad is not None and pad.source and pad.source[0] == "key":
-                self.set_pad_label(pad, "")
+                self.set_pad_input(pad, "", clear_label=True)
             self.update()
 
     def mouseMoveEvent(self, e):
@@ -487,21 +645,28 @@ class Overlay(QWidget):
             self.cfg["x"], self.cfg["y"] = self.x(), self.y()
             self.config_changed.emit()
 
-    def set_pad_label(self, pad, label):
-        kind, ref = pad.source
-        if kind == "key":
-            self.cfg["keys"][ref]["label"] = label
-        else:
-            self.cfg["joystick"][ref] = label
-        self.apply()
-        self.config_changed.emit()
-
     def wheelEvent(self, e):
         if not self.edit_mode:
             return
         factor = 1.08 if e.angleDelta().y() > 0 else 1 / 1.08
         s = min(self.SCALE_MAX, max(self.SCALE_MIN, self.cfg.get("scale", 1.0) * factor))
         self.cfg["scale"] = round(s, 3)
+        self.apply()
+        self.config_changed.emit()
+
+    def set_pad_input(self, pad, text, clear_label=False):
+        """Bind a pad to an input name. Keeps a custom (macro) label if one is set."""
+        src = pad.source
+        if src[0] == "key":
+            k = self.cfg["keys"][src[1]]
+            old_input = k.get("input", k.get("label", ""))
+            k.pop("sc", None)
+            k.pop("axis", None)
+            k["input"] = text
+            if clear_label or not k.get("label") or k.get("label") == old_input:
+                k["label"] = text if not is_gamepad_input(text) else GAMEPAD_LABELS.get(text, text)
+        else:
+            self.cfg["sticks"][src[1]][src[2]] = text
         self.apply()
         self.config_changed.emit()
 
@@ -516,6 +681,20 @@ class Overlay(QWidget):
 
     def on_release(self, key):
         self.events.put(("up", vk_of(key)))
+
+    def _on_new_press(self, token):
+        if self.capturing:
+            self.capturing = False
+            if self.capture_pad is not None:
+                pad, self.capture_pad = self.capture_pad, None
+                name = label_for_token(token) if not is_gamepad_input(token) else token
+                if name is not None:
+                    self.set_pad_input(pad, name)
+                self.update()
+            else:
+                self.key_captured.emit(token)
+        elif not is_gamepad_input(token):
+            self.check_hotkeys(token)
 
     def pump(self):
         now = time.monotonic()
@@ -532,30 +711,47 @@ class Overlay(QWidget):
             if kind == "down":
                 if vk not in self.pressed:
                     self.pressed.add(vk)
-                    if self.capturing:
-                        self.capturing = False
-                        if self.capture_pad is not None:
-                            pad, self.capture_pad = self.capture_pad, None
-                            label = label_for_vk(vk)
-                            if label is not None:
-                                self.set_pad_label(pad, label)
-                            self.update()
-                        else:
-                            self.key_captured.emit(vk)
-                    else:
-                        self.check_hotkeys(vk)
+                    self._on_new_press(vk)
             else:
                 self.pressed.discard(vk)
+
+        gp_pressed, axes = self.gamepad.poll()
+        for tok in gp_pressed - self._gp_pressed:
+            self._on_new_press(tok)
+        self.pressed -= self._gp_pressed
+        self.pressed |= gp_pressed
+        self._gp_pressed = gp_pressed
+        self.axes = axes
 
         step = dt * 1000 / self.FADE_MS
         dirty = False
         for pad in self.pads:
-            down = bool(pad.vks & self.pressed)
+            if pad.axis:
+                target = max(0.0, min(1.0, self.axes.get(pad.axis, 0.0)))
+                if abs(pad.level - target) > 0.01:
+                    pad.level = target
+                    dirty = True
+                continue
+            down = input_matches(pad.alts, self.pressed)
             if down and pad.level < 1.0:
                 pad.level = 1.0  # instant on
                 dirty = True
             elif not down and pad.level > 0.0:
                 pad.level = max(0.0, pad.level - step)  # smooth off
+                dirty = True
+        for st in self.sticks:
+            if st.axes:
+                ox = self.axes.get(st.axes[0], 0.0)
+                oy = self.axes.get(st.axes[1], 0.0) if len(st.axes) > 1 else 0.0
+                if abs(ox - st.offset.x()) > 0.005 or abs(oy - st.offset.y()) > 0.005:
+                    st.offset = QPointF(ox, oy)
+                    dirty = True
+            down = input_matches(st.click, self.pressed)
+            if down and st.level < 1.0:
+                st.level = 1.0
+                dirty = True
+            elif not down and st.level > 0.0:
+                st.level = max(0.0, st.level - step)
                 dirty = True
         if dirty:
             self.update()
@@ -575,7 +771,10 @@ class Overlay(QWidget):
         QApplication.quit()
 
 
-def make_icon(color="#c9d400"):
+def app_icon(color="#c9d400"):
+    """The AZ logo from assets, or a drawn stand-in if the asset is missing."""
+    if os.path.exists(LOGO_PATH):
+        return QIcon(LOGO_PATH)
     pm = QPixmap(64, 64)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
@@ -583,9 +782,10 @@ def make_icon(color="#c9d400"):
     p.setBrush(QColor("#1e1e1e"))
     p.setPen(QPen(QColor(color), 5))
     p.drawRoundedRect(6, 6, 52, 52, 12, 12)
-    p.setBrush(QColor(color))
-    p.setPen(Qt.PenStyle.NoPen)
-    p.drawRoundedRect(20, 20, 24, 24, 5, 5)
+    p.setPen(QPen(QColor(color), 6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawPolyline([QPointF(14, 44), QPointF(24, 20), QPointF(34, 44)])
+    p.drawPolyline([QPointF(36, 22), QPointF(50, 22), QPointF(36, 44), QPointF(50, 44)])
     p.end()
     return QIcon(pm)
 
@@ -601,8 +801,8 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")  # consistent widget rendering; stylesheet in settings_ui relies on it
     app.setQuitOnLastWindowClosed(False)
-    app.setApplicationName("az-overlay")
-    icon = make_icon()
+    app.setApplicationName(APP_NAME)
+    icon = app_icon()
     app.setWindowIcon(icon)
 
     overlay = Overlay(cfg)
@@ -614,7 +814,7 @@ def main():
     overlay.open_settings.connect(settings.present)
 
     tray = QSystemTrayIcon(icon)
-    tray.setToolTip("az-overlay — right-click for settings")
+    tray.setToolTip(f"{APP_NAME} — right-click for settings")
     menu = QMenu()
     act_settings = QAction("Settings…", menu)
     act_settings.triggered.connect(settings.present)
@@ -629,7 +829,7 @@ def main():
     tray.setContextMenu(menu)
     tray.activated.connect(lambda r: settings.present() if r == QSystemTrayIcon.ActivationReason.DoubleClick else None)
     tray.show()
-    tray.showMessage("az-overlay running", "Double-click the tray icon or press Ctrl+Alt+S for settings.",
+    tray.showMessage(f"{APP_NAME} running", "Double-click the tray icon or press Ctrl+Alt+S for settings.",
                      icon, 3000)
 
     sys.exit(app.exec())

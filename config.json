@@ -23,168 +23,236 @@
     {
       "label": "Page Up",
       "col": 7,
-      "row": 0
+      "row": 0,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "9",
       "col": 1,
-      "row": 1
+      "row": 1,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "Alt",
       "col": 2,
-      "row": 1
+      "row": 1,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "H",
       "col": 3,
-      "row": 1
+      "row": 1,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "X",
       "col": 4,
-      "row": 1
+      "row": 1,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "F1",
       "col": 6,
-      "row": 1
+      "row": 1,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "Esc",
       "col": 7,
-      "row": 1
+      "row": 1,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "F2",
       "col": 8,
-      "row": 1
+      "row": 1,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "0",
       "col": 1,
-      "row": 2
+      "row": 2,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "",
       "col": 2,
-      "row": 2
+      "row": 2,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "G",
       "col": 3,
-      "row": 2
+      "row": 2,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "I",
       "col": 4,
-      "row": 2
+      "row": 2,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "Page Down",
       "col": 7,
-      "row": 2
+      "row": 2,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "Q",
       "col": 0,
-      "row": 3
+      "row": 3,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "B",
       "col": 1,
-      "row": 3
+      "row": 3,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "Z",
       "col": 2,
-      "row": 3
+      "row": 3,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "V",
       "col": 3,
-      "row": 3
+      "row": 3,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "F",
       "col": 4,
-      "row": 3
+      "row": 3,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "E",
       "col": 5,
-      "row": 3
+      "row": 3,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "J",
       "col": 8,
-      "row": 3
+      "row": 3,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "R",
       "col": 1,
-      "row": 4
+      "row": 4,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "Shift",
       "col": 2,
-      "row": 4
+      "row": 4,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "Space",
       "col": 3,
-      "row": 4
+      "row": 4,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "Ctrl",
       "col": 4,
-      "row": 4
+      "row": 4,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "Caps Lock",
       "col": 8,
-      "row": 4
+      "row": 4,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "L",
       "col": 1,
-      "row": 5
+      "row": 5,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "M",
       "col": 2,
-      "row": 5
+      "row": 5,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "",
       "col": 3,
-      "row": 5
+      "row": 5,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "C",
       "col": 4,
-      "row": 5
+      "row": 5,
+      "w": 1,
+      "h": 1
     },
     {
       "label": "Tab",
       "col": 6,
-      "row": 5
+      "row": 5,
+      "w": 1,
+      "h": 1
     }
   ],
-  "joystick": {
-    "col": 6,
-    "row": 3,
-    "cols": 2,
-    "rows": 2,
-    "up": "W",
-    "left": "A",
-    "down": "S",
-    "right": "D",
-    "enabled": true
-  },
   "font": {
     "family": "Segoe UI",
     "size": 13,
     "bold": true
-  }
+  },
+  "shape": "rect",
+  "sticks": [
+    {
+      "label": "Left Stick",
+      "col": 6,
+      "row": 3,
+      "w": 2,
+      "h": 2,
+      "up": "W",
+      "down": "S",
+      "left": "A",
+      "right": "D",
+      "axes": [
+        "gp:leftx",
+        "gp:lefty"
+      ],
+      "click": "gp:leftstick"
+    }
+  ]
 }

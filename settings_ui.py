@@ -6,14 +6,18 @@ import tempfile
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPalette, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
-    QAbstractItemView, QAbstractSpinBox, QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox,
-    QFontComboBox, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog,
-    QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QScrollArea,
-    QSlider, QSpinBox, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QAbstractSpinBox, QCheckBox, QColorDialog, QComboBox, QDialog,
+    QDialogButtonBox, QDoubleSpinBox, QFontComboBox, QFormLayout, QFrame, QGridLayout,
+    QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QMessageBox, QPushButton, QScrollArea, QSlider, QSpinBox, QStackedWidget, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from overlay import (DEFAULT_COLORS, PROFILE_KEYS, delete_profile, label_for_vk, list_profiles,
-                     load_profile, save_config, save_profile, vks_for_label)
+import templates
+from gamepad import is_gamepad_input
+from overlay import (APP_NAME, DEFAULT_COLORS, GAMEPAD_LABELS, PROFILE_KEYS, delete_profile,
+                     label_for_token, list_profiles, load_profile, migrate, pad_inputs, parse_input,
+                     save_config, save_profile, vks_for_label)
 
 # Palette: graphite surfaces, one accent (the overlay's own yellow-green), used sparingly.
 BG = "#17181b"
@@ -220,6 +224,7 @@ class PadPreview(QWidget):
         x0 = (self.width() - (2 * w + gap)) / 2
         y0 = (self.height() - h - 18) / 2
         r = 10
+        circle = self.cfg.get("shape") == "circle"
         for x, state in ((x0, "idle"), (x0 + w + gap, "pressed")):
             rect = QRectF(x, y0, w, h)
             if state == "pressed":
@@ -241,6 +246,64 @@ class PadPreview(QWidget):
         p.end()
 
 
+class TemplateDialog(QDialog):
+    """Device -> template -> keyboard layout -> name."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("New layout from template")
+        self.setPalette(parent.palette())
+        self.setStyleSheet(parent.styleSheet())
+        self.setMinimumWidth(420)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(20, 18, 20, 18)
+        v.setSpacing(12)
+        f = form()
+        self.device = QComboBox()
+        self.device.addItems(templates.DEVICES)
+        self.template = QComboBox()
+        self.layout_combo = QComboBox()
+        self.name = QLineEdit()
+        f.addRow("Device", self.device)
+        f.addRow("Template", self.template)
+        f.addRow("Keyboard layout", self.layout_combo)
+        f.addRow("Name", self.name)
+        v.addLayout(f)
+        v.addWidget(muted("Creates a new saved layout and switches to it. "
+                          "Keyboard keys are matched by physical position, so any Windows layout works."))
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Create")
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setObjectName("primary")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        v.addWidget(buttons)
+        self.device.currentTextChanged.connect(self._device_changed)
+        self.template.currentTextChanged.connect(self._suggest)
+        self.layout_combo.currentTextChanged.connect(self._suggest)
+        self._device_changed(self.device.currentText())
+
+    def _device_changed(self, device):
+        self.template.blockSignals(True)
+        self.template.clear()
+        self.template.addItems(templates.templates_for(device))
+        self.template.blockSignals(False)
+        layouts = templates.layouts_for(device)
+        self.layout_combo.blockSignals(True)
+        self.layout_combo.clear()
+        self.layout_combo.addItems(layouts)
+        self.layout_combo.setEnabled(bool(layouts))
+        self.layout_combo.blockSignals(False)
+        self._suggest()
+
+    def _suggest(self, *_):
+        self.name.setText(templates.suggested_name(self.device.currentText(), self.template.currentText(),
+                                                   self.layout_combo.currentText() or None))
+
+    def result_profile(self):
+        return templates.build(self.device.currentText(), self.template.currentText(),
+                               self.layout_combo.currentText() or None)
+
+
 # ---- the window ------------------------------------------------------------
 class SettingsWindow(QWidget):
     PAGES = ("Layout", "Keys", "Appearance")
@@ -249,11 +312,11 @@ class SettingsWindow(QWidget):
         super().__init__()
         self.overlay = overlay
         self.cfg = overlay.cfg
-        self.setWindowTitle("az-overlay")
+        self.setWindowTitle(APP_NAME)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self.setPalette(dark_palette())
         self.setStyleSheet(style())
-        self.resize(720, 640)
+        self.resize(780, 660)
         self.setMinimumSize(600, 480)
         self._loading = False
 
@@ -295,10 +358,15 @@ class SettingsWindow(QWidget):
         h = QHBoxLayout(f)
         h.setContentsMargins(20, 12, 20, 12)
         h.setSpacing(10)
-        brand = QLabel("az-overlay")
+        brand = QLabel(APP_NAME)
         brand.setObjectName("brand")
         h.addWidget(brand)
         h.addStretch(1)
+        b_tpl = QPushButton("+ New layout")
+        b_tpl.setToolTip("Create a layout from a template: Azeron, keyboards, Xbox, PlayStation")
+        b_tpl.clicked.connect(self._new_from_template)
+        h.addWidget(b_tpl)
+        h.addSpacing(12)
         h.addWidget(muted("Layout"))
         self.profile_combo = QComboBox()
         self.profile_combo.setMinimumWidth(200)
@@ -428,15 +496,17 @@ class SettingsWindow(QWidget):
     def _keys_page(self):
         c1, l1 = card()
         l1.addWidget(section("Pads"))
-        l1.addWidget(muted("Label is what the Cyborg sends for that pad (Q, 9, Alt, Page Up, F1…). "
-                           "Empty label hides the pad. Col / Row place it on the grid."))
-        self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["Label", "Col", "Row"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(1, 70)
-        self.table.setColumnWidth(2, 70)
+        l1.addWidget(muted("Label is the text on the pad (a key name, or a macro name). Input is what lights it: "
+                           "a key (F5), several keys for a macro (F5, F6), a chord (Ctrl+Shift+K) or a controller "
+                           "button (gp:a). Leave Input empty to use the label. Col / Row / W / H place and size it."))
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(["Label", "Input", "Col", "Row", "W", "H"])
+        hdr = self.table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        for c in (2, 3, 4, 5):
+            hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.Fixed)
+            self.table.setColumnWidth(c, 56)
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -460,45 +530,40 @@ class SettingsWindow(QWidget):
         l1.addLayout(row)
 
         c2, l2 = card()
-        l2.addWidget(section("Thumbstick"))
-        j = self.cfg.setdefault("joystick", {"col": 6, "row": 3, "cols": 2, "rows": 2,
-                                             "up": "W", "left": "A", "down": "S", "right": "D"})
-        self.chk_joy = QCheckBox("Show thumbstick (keyboard mode)")
-        self.chk_joy.setChecked(j.get("enabled", True))
-        self.chk_joy.toggled.connect(lambda on: self._set_joy("enabled", on))
-        l2.addWidget(self.chk_joy)
-        keys_row = QGridLayout()
-        keys_row.setHorizontalSpacing(8)
-        keys_row.setVerticalSpacing(8)
-        self.joy_edits = {}
-        for i, (name, text) in enumerate((("up", "Up"), ("down", "Down"), ("left", "Left"), ("right", "Right"))):
-            le = QLineEdit(j.get(name, ""))
-            le.setFixedWidth(64)
-            le.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            le.editingFinished.connect(lambda le=le, n=name: self._joy_label(n, le))
-            self.joy_edits[name] = le
-            lbl = QLabel(text)
-            lbl.setObjectName("muted")
-            lbl.setFixedWidth(44)
-            keys_row.addWidget(lbl, i // 2, (i % 2) * 2)
-            keys_row.addWidget(le, i // 2, (i % 2) * 2 + 1)
-        keys_row.setColumnStretch(4, 1)
-        pos_row = QHBoxLayout()
-        pos_row.setSpacing(8)
-        for name, text in (("col", "Col"), ("row", "Row")):
-            sp = QSpinBox(); sp.setRange(0, 40); sp.setValue(j.get(name, 0)); sp.setFixedWidth(64)
-            sp.valueChanged.connect(lambda val, n=name: self._set_joy(n, val))
-            lbl = QLabel(text)
-            lbl.setObjectName("muted")
-            lbl.setFixedWidth(44)
-            pos_row.addWidget(lbl)
-            pos_row.addWidget(stepper(sp))
-            pos_row.addSpacing(8)
-        pos_row.addStretch(1)
-        f4 = form()
-        f4.addRow("Keys", keys_row)
-        f4.addRow("Position", pos_row)
-        l2.addLayout(f4)
+        l2.addWidget(section("Sticks & d-pads"))
+        l2.addWidget(muted("Directions take a key name (W) or controller input (gp:dpup). "
+                           "Axes (gp:leftx, gp:lefty) move the knob; Click lights it."))
+        self.stick_table = QTableWidget(0, 9)
+        self.stick_table.setHorizontalHeaderLabels(["Label", "Up", "Down", "Left", "Right", "Col", "Row", "W", "H"])
+        sh = self.stick_table.horizontalHeader()
+        sh.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for c in range(1, 9):
+            sh.setSectionResizeMode(c, QHeaderView.ResizeMode.Fixed)
+            self.stick_table.setColumnWidth(c, 62 if c < 5 else 48)
+        self.stick_table.verticalHeader().setVisible(False)
+        self.stick_table.setShowGrid(False)
+        self.stick_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.stick_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.stick_table.setMaximumHeight(140)
+        self.stick_table.itemChanged.connect(self._stick_edited)
+        l2.addWidget(self.stick_table)
+        srow = QHBoxLayout()
+        b_add_keys = QPushButton("Add WASD stick")
+        b_add_keys.clicked.connect(lambda: self._add_stick("keys"))
+        b_add_analog = QPushButton("Add analog stick")
+        b_add_analog.clicked.connect(lambda: self._add_stick("analog"))
+        b_add_dpad = QPushButton("Add d-pad")
+        b_add_dpad.clicked.connect(lambda: self._add_stick("dpad"))
+        b_del = QPushButton("Remove")
+        b_del.setObjectName("quiet")
+        b_del.clicked.connect(self._remove_stick)
+        for b in (b_add_keys, b_add_analog, b_add_dpad):
+            srow.addWidget(b)
+        srow.addStretch(1)
+        srow.addWidget(b_del)
+        l2.addLayout(srow)
+        self.joy_edits = {}  # kept for older callers; sticks are edited in the table now
+        self._fill_sticks()
         self._fill_table()
         return self._page(c1, c2)
 
@@ -596,13 +661,24 @@ class SettingsWindow(QWidget):
         self.sp_x.setValue(self.cfg["x"])
         self.sp_y.setValue(self.cfg["y"])
         self.sp_scale.setValue(self.cfg.get("scale", 1.0))
-        for name, le in self.joy_edits.items():
-            le.setText(self.cfg["joystick"].get(name, ""))
         self._loading = False
         self._fill_table()
+        self._fill_sticks()
         self._schedule_save()
 
     # keys table
+    @staticmethod
+    def _input_text(k):
+        if k.get("input") is not None:
+            return k["input"]
+        if "sc" in k:
+            return f"sc:{k['sc']:#x}"
+        return ""
+
+    @staticmethod
+    def _num(v):
+        return str(int(v)) if float(v).is_integer() else str(v)
+
     def _fill_table(self):
         self._loading = True
         self.table.setRowCount(0)
@@ -610,8 +686,13 @@ class SettingsWindow(QWidget):
             r = self.table.rowCount()
             self.table.insertRow(r)
             self.table.setItem(r, 0, QTableWidgetItem(k["label"]))
-            for c, key in ((1, "col"), (2, "row")):
-                it = QTableWidgetItem(str(k[key]))
+            inp = QTableWidgetItem(self._input_text(k))
+            if "sc" in k and k.get("input") is None:
+                inp.setForeground(QColor(MUTED))
+                inp.setToolTip("Physical key (scancode). Type a key name to override.")
+            self.table.setItem(r, 1, inp)
+            for c, key in ((2, "col"), (3, "row"), (4, "w"), (5, "h")):
+                it = QTableWidgetItem(self._num(k.get(key, 1)))
                 it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(r, c, it)
         self._loading = False
@@ -623,25 +704,43 @@ class SettingsWindow(QWidget):
         k = self.cfg["keys"][r]
         text = item.text().strip()
         if c == 0:
-            try:
-                vks_for_label(text)
-            except ValueError:
-                self._loading = True
-                item.setText(k["label"])
-                self._loading = False
-                self._flash(f"Unknown key name: {text}")
-                return
             k["label"] = text
+        elif c == 1:
+            if text.lower().startswith("sc:"):
+                try:
+                    k["sc"] = int(text[3:], 0)
+                    k.pop("input", None)
+                except ValueError:
+                    self._revert(item, self._input_text(k), "Scancode must be a number, e.g. sc:0x1e")
+                    return
+            else:
+                try:
+                    parse_input(text)
+                except ValueError as e:
+                    self._revert(item, self._input_text(k), str(e))
+                    return
+                k.pop("sc", None)
+                if text:
+                    k["input"] = text
+                else:
+                    k.pop("input", None)
         else:
-            field = "col" if c == 1 else "row"
+            field = {2: "col", 3: "row", 4: "w", 5: "h"}[c]
             try:
-                k[field] = max(0, int(text))
+                val = float(text)
+                if field in ("w", "h") and val <= 0:
+                    raise ValueError
+                k[field] = int(val) if val.is_integer() else round(val, 3)
             except ValueError:
-                self._loading = True
-                item.setText(str(k[field]))
-                self._loading = False
+                self._revert(item, self._num(k.get(field, 1)), "Enter a number")
                 return
         self._apply()
+
+    def _revert(self, item, text, msg):
+        self._loading = True
+        item.setText(text)
+        self._loading = False
+        self._flash(msg)
 
     def _add_pad(self):
         used = {(k["col"], k["row"]) for k in self.cfg["keys"]}
@@ -650,7 +749,7 @@ class SettingsWindow(QWidget):
             col += 1
             if col > 12:
                 col, row = 0, row + 1
-        self.cfg["keys"].append({"label": "", "col": col, "row": row})
+        self.cfg["keys"].append({"label": "", "col": col, "row": row, "w": 1, "h": 1})
         self._fill_table()
         self.table.selectRow(self.table.rowCount() - 1)
         self._apply()
@@ -671,32 +770,89 @@ class SettingsWindow(QWidget):
         self.overlay.capturing = on
         self.btn_capture.setText("Press a button on the Cyborg…" if on else "Capture key for selected pad")
 
-    def _on_key_captured(self, vk):
+    def _on_key_captured(self, token):
         self.btn_capture.setChecked(False)
-        label = label_for_vk(vk)
         r = self.table.currentRow()
-        if label is None or r < 0:
-            self._flash(f"Unknown key (vk {vk})")
+        name = token if is_gamepad_input(token) else label_for_token(token)
+        if name is None or r < 0:
+            self._flash(f"Unknown key ({token})")
             return
-        self.cfg["keys"][r]["label"] = label
+        k = self.cfg["keys"][r]
+        old_input = k.get("input", k.get("label", ""))
+        k.pop("sc", None)
+        k["input"] = name
+        if not k.get("label") or k.get("label") == old_input:
+            k["label"] = GAMEPAD_LABELS.get(name, name)
+        self._fill_table()
+        self.table.selectRow(r)
+        self._flash(f"Pad input set to {name}")
+        self._apply()
+
+    STICK_COLS = ("label", "up", "down", "left", "right", "col", "row", "w", "h")
+
+    def _fill_sticks(self):
         self._loading = True
-        self.table.item(r, 0).setText(label)
+        self.stick_table.setRowCount(0)
+        for st in self.cfg.get("sticks", []):
+            r = self.stick_table.rowCount()
+            self.stick_table.insertRow(r)
+            for c, key in enumerate(self.STICK_COLS):
+                val = st.get(key, "")
+                it = QTableWidgetItem(self._num(val) if isinstance(val, (int, float)) else str(val))
+                if c >= 1:
+                    it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.stick_table.setItem(r, c, it)
         self._loading = False
-        self._flash(f"Pad set to {label}")
-        self._apply()
 
-    def _set_joy(self, key, val):
-        self.cfg["joystick"][key] = val
-        self._apply()
-
-    def _joy_label(self, name, le):
-        try:
-            vks_for_label(le.text())
-        except ValueError:
-            le.setText(self.cfg["joystick"].get(name, ""))
-            self._flash("Unknown key name")
+    def _stick_edited(self, item):
+        if self._loading:
             return
-        self._set_joy(name, le.text().strip())
+        r, c = item.row(), item.column()
+        st = self.cfg["sticks"][r]
+        key = self.STICK_COLS[c]
+        text = item.text().strip()
+        if key == "label":
+            st["label"] = text
+        elif key in ("up", "down", "left", "right"):
+            try:
+                parse_input(text)
+            except ValueError as e:
+                self._revert(item, st.get(key, ""), str(e))
+                return
+            if text:
+                st[key] = text
+            else:
+                st.pop(key, None)
+        else:
+            try:
+                val = float(text)
+                if key in ("w", "h") and val <= 0:
+                    raise ValueError
+                st[key] = int(val) if val.is_integer() else round(val, 3)
+            except ValueError:
+                self._revert(item, self._num(st.get(key, 2)), "Enter a number")
+                return
+        self._apply()
+
+    def _add_stick(self, kind):
+        base = {"label": "", "col": 0, "row": 0, "w": 2, "h": 2}
+        if kind == "keys":
+            base.update(label="WASD", up="W", down="S", left="A", right="D")
+        elif kind == "analog":
+            base.update(label="L", axes=["gp:leftx", "gp:lefty"], click="gp:leftstick")
+        else:
+            base.update(up="gp:dpup", down="gp:dpdown", left="gp:dpleft", right="gp:dpright")
+        self.cfg.setdefault("sticks", []).append(base)
+        self._fill_sticks()
+        self._apply()
+
+    def _remove_stick(self):
+        r = self.stick_table.currentRow()
+        if r < 0:
+            return
+        del self.cfg["sticks"][r]
+        self._fill_sticks()
+        self._apply()
 
     def _set_font(self, key, val):
         if self._loading:
@@ -711,6 +867,29 @@ class SettingsWindow(QWidget):
         self._apply()
 
     # ---- layout profiles ----------------------------------------------
+    def _new_from_template(self):
+        dlg = TemplateDialog(self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        name = dlg.name.text().strip() or dlg.device.currentText()
+        prof = dlg.result_profile()
+        prof["colors"] = dict(self.cfg["colors"])  # keep the user's colours
+        prof["x"], prof["y"], prof["opacity"] = self.cfg["x"], self.cfg["y"], self.cfg.get("opacity", 0.85)
+        migrate(prof)
+        try:
+            save_profile(name, prof)
+        except (OSError, ValueError) as e:
+            self._flash(f"Could not save: {e}")
+            return
+        for k in PROFILE_KEYS:
+            if k in prof:
+                self.cfg[k] = prof[k]
+        self.cfg["profile"] = name
+        self._refresh_profiles()
+        self._rebuild_tabs()
+        self._apply()
+        self._flash(f"Created layout '{name}'")
+
     def _refresh_profiles(self):
         self.profile_combo.blockSignals(True)
         self.profile_combo.clear()
