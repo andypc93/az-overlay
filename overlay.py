@@ -109,6 +109,9 @@ DEFAULT_COLORS = {
 }
 
 
+DEFAULT_FONT = {"family": "Segoe UI", "size": 13, "bold": True}
+
+
 def load_config():
     with open(CONFIG_PATH, encoding="utf-8") as f:
         cfg = json.load(f)
@@ -116,6 +119,9 @@ def load_config():
     for k, v in DEFAULT_COLORS.items():
         cfg["colors"].setdefault(k, v)
     cfg.setdefault("hotkeys", {}).setdefault("settings", "S")
+    cfg.setdefault("font", {})
+    for k, v in DEFAULT_FONT.items():
+        cfg["font"].setdefault(k, v)
     return cfg
 
 
@@ -193,7 +199,9 @@ class Overlay(QWidget):
         self.ch = cfg["cell_h"] * s
         self.gap = cfg["gap"] * s
         self.radius = 10 * s
-        self.font = QFont("Segoe UI", max(6, int(13 * s)), QFont.Weight.DemiBold)
+        fnt = cfg.get("font", DEFAULT_FONT)
+        self.font = QFont(fnt.get("family", "Segoe UI"), max(4, int(fnt.get("size", 13) * s)),
+                          QFont.Weight.Bold if fnt.get("bold", True) else QFont.Weight.Normal)
 
         c = cfg["colors"]
         self.col = {k: QColor(v) for k, v in c.items()}

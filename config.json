@@ -181,5 +181,10 @@
     "down": "S",
     "right": "D",
     "enabled": true
+  },
+  "font": {
+    "family": "Segoe UI",
+    "size": 13,
+    "bold": true
   }
 }

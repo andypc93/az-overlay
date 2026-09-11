@@ -1,9 +1,9 @@
 """Settings window for the overlay. Every edit applies live and autosaves."""
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QColorDialog, QDoubleSpinBox, QFormLayout, QFrame,
+    QAbstractItemView, QCheckBox, QColorDialog, QDoubleSpinBox, QFontComboBox, QFormLayout,
     QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton,
     QSlider, QSpinBox, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
@@ -91,7 +91,7 @@ class SettingsWindow(QWidget):
         root.addWidget(tabs)
         tabs.addTab(self._layout_tab(), "Layout")
         tabs.addTab(self._keys_tab(), "Keys")
-        tabs.addTab(self._colors_tab(), "Colors")
+        tabs.addTab(self._colors_tab(), "Text && Colors")
 
         bottom = QHBoxLayout()
         self.status = QLabel("")
@@ -230,6 +230,23 @@ class SettingsWindow(QWidget):
     def _colors_tab(self):
         w = QWidget()
         v = QVBoxLayout(w)
+
+        gf = QGroupBox("Key text")
+        ff = QFormLayout(gf)
+        fnt = self.cfg["font"]
+        self.font_combo = QFontComboBox()
+        self.font_combo.setCurrentFont(QFont(fnt["family"]))
+        self.font_combo.currentFontChanged.connect(lambda f: self._set_font("family", f.family()))
+        self.sp_font = QSpinBox(); self.sp_font.setRange(4, 72); self.sp_font.setValue(int(fnt["size"]))
+        self.sp_font.setSuffix(" pt (at scale 1.0)")
+        self.sp_font.valueChanged.connect(lambda v: self._set_font("size", v))
+        self.chk_bold = QCheckBox("Bold"); self.chk_bold.setChecked(bool(fnt["bold"]))
+        self.chk_bold.toggled.connect(lambda on: self._set_font("bold", on))
+        ff.addRow("Font", self.font_combo)
+        ff.addRow("Size", self.sp_font)
+        ff.addRow("", self.chk_bold)
+        v.addWidget(gf)
+
         self.color_buttons = []
         for title, prefix in (("Idle (not pressed)", "idle_"), ("Pressed", "pressed_")):
             g = QGroupBox(title)
@@ -390,6 +407,12 @@ class SettingsWindow(QWidget):
             self._flash("Unknown key name")
             return
         self._set_joy(name, le.text().strip())
+
+    def _set_font(self, key, val):
+        if self._loading:
+            return
+        self.cfg["font"][key] = val
+        self._apply()
 
     def _reset_colors(self):
         from overlay import DEFAULT_COLORS
