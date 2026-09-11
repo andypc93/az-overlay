@@ -3,7 +3,8 @@
 Transparent, click-through, always-on-top overlay that shows your input device
 and lights the buttons you press. Built-in templates:
 
-- **Azeron Cyborg 2** (keys + analog thumbstick)
+- **Azeron**: Cyborg II, Cyborg II Compact, Cyborg, Cyborg Compact, Keyzen, Cyro,
+  Classic, Compact (keys + analog thumbstick; Cyro also lights mouse buttons)
 - **Keyboards**: 100%, 1800, 96%, 80% TKL, 75% exploded / compact, 65% exploded /
   compact, 60%, 50%, 40%, each in US (ANSI), UK, German, French, Spanish (ISO)
 - **Xbox** and **PlayStation** controllers (analog sticks and triggers animate)

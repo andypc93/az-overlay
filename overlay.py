@@ -20,7 +20,7 @@ import shutil
 import sys
 import time
 
-from pynput import keyboard
+from pynput import keyboard, mouse
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
@@ -395,6 +395,9 @@ class Overlay(QWidget):
         self.listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
         self.listener.daemon = True
         self.listener.start()
+        self.mouse_listener = mouse.Listener(on_click=self.on_click)
+        self.mouse_listener.daemon = True
+        self.mouse_listener.start()
 
         self.last_tick = time.monotonic()
         self.tick = QTimer(self)
@@ -682,6 +685,13 @@ class Overlay(QWidget):
     def on_release(self, key):
         self.events.put(("up", vk_of(key)))
 
+    _MOUSE_VK = {"left": 0x01, "right": 0x02, "middle": 0x04, "x1": 0x05, "x2": 0x06}
+
+    def on_click(self, _x, _y, button, pressed):
+        vk = self._MOUSE_VK.get(getattr(button, "name", ""))
+        if vk is not None:
+            self.events.put(("down" if pressed else "up", vk))
+
     def _on_new_press(self, token):
         if self.capturing:
             self.capturing = False
@@ -768,6 +778,7 @@ class Overlay(QWidget):
 
     def shutdown(self):
         self.listener.stop()
+        self.mouse_listener.stop()
         QApplication.quit()
 
 

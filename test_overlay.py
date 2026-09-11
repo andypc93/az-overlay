@@ -129,3 +129,16 @@ def test_keyboard_keys_do_not_overlap():
             for b in boxes[i + 1:]:
                 overlap = a[0] < b[2] - 1e-6 and b[0] < a[2] - 1e-6 and a[1] < b[3] - 1e-6 and b[1] < a[3] - 1e-6
                 assert not overlap, (name, a, b)
+
+
+def test_azeron_models_listed_and_build():
+    import templates
+    names = templates.templates_for("Azeron")
+    assert names == ["Cyborg II", "Cyborg II Compact", "Cyborg", "Cyborg Compact", "Keyzen", "Cyro", "Classic", "Compact"]
+    for n in names:
+        prof = templates.build("Azeron", n)
+        assert prof["sticks"] and prof["keys"]
+        for k in prof["keys"]:
+            overlay.pad_inputs(k)
+    assert templates.suggested_name("Azeron", "Keyzen") == "Azeron Keyzen"
+    assert len(templates.build("Azeron", "Cyborg II")["keys"]) == 30

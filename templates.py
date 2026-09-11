@@ -275,25 +275,108 @@ def keyboard_profile(form, language):
     }
 
 
-# ---- Azeron Cyborg 2 ---------------------------------------------------------
-def azeron_profile():
-    layout = [
-        ("Page Up", 7, 0), ("9", 1, 1), ("Alt", 2, 1), ("H", 3, 1), ("X", 4, 1), ("F1", 6, 1),
-        ("Esc", 7, 1), ("F2", 8, 1), ("0", 1, 2), ("", 2, 2), ("G", 3, 2), ("I", 4, 2),
-        ("Page Down", 7, 2), ("Q", 0, 3), ("B", 1, 3), ("Z", 2, 3), ("V", 3, 3), ("F", 4, 3),
-        ("E", 5, 3), ("J", 8, 3), ("R", 1, 4), ("Shift", 2, 4), ("Space", 3, 4), ("Ctrl", 4, 4),
-        ("Caps Lock", 8, 4), ("L", 1, 5), ("M", 2, 5), ("", 3, 5), ("C", 4, 5), ("Tab", 6, 5),
-    ]
+# ---- Azeron keypads ------------------------------------------------------------
+# Drawn in the style of the Azeron software editor: finger towers as columns,
+# thumb cluster to the right. Default bindings are placeholders; rebind by
+# clicking a pad in move mode. Geometry is approximate per model.
+_CYBORG_II = [
+    ("Page Up", 7, 0), ("9", 1, 1), ("Alt", 2, 1), ("H", 3, 1), ("X", 4, 1), ("F1", 6, 1),
+    ("Esc", 7, 1), ("F2", 8, 1), ("0", 1, 2), ("", 2, 2), ("G", 3, 2), ("I", 4, 2),
+    ("Page Down", 7, 2), ("Q", 0, 3), ("B", 1, 3), ("Z", 2, 3), ("V", 3, 3), ("F", 4, 3),
+    ("E", 5, 3), ("J", 8, 3), ("R", 1, 4), ("Shift", 2, 4), ("Space", 3, 4), ("Ctrl", 4, 4),
+    ("Caps Lock", 8, 4), ("L", 1, 5), ("M", 2, 5), ("", 3, 5), ("C", 4, 5), ("Tab", 6, 5),
+]
+_STICK = {"label": "Left Stick", "up": "W", "left": "A", "down": "S", "right": "D",
+          "axes": ["gp:leftx", "gp:lefty"], "click": "gp:leftstick"}
+
+
+def _azeron(pads, stick_pos=(6, 3)):
+    stick = dict(_STICK, col=stick_pos[0], row=stick_pos[1], w=2, h=2)
     return {
         "cell_w": 100, "cell_h": 140, "gap": 8, "scale": 0.5, "shape": "rect",
         "font": {"family": "Segoe UI", "size": 13, "bold": True},
-        "keys": [{"label": l, "col": c, "row": r, "w": 1, "h": 1} for l, c, r in layout],
-        "sticks": [{
-            "label": "Left Stick", "col": 6, "row": 3, "w": 2, "h": 2,
-            "up": "W", "left": "A", "down": "S", "right": "D",
-            "axes": ["gp:leftx", "gp:lefty"], "click": "gp:leftstick",
-        }],
+        "keys": [{"label": l, "col": c, "row": r, "w": 1, "h": 1} for l, c, r in pads],
+        "sticks": [stick],
     }
+
+
+def _towers(cols, rows, labels, x0=1, y0=1):
+    """Finger towers: `rows[i]` pads in column i, labelled from `labels`."""
+    pads, it = [], iter(labels)
+    for i in range(cols):
+        for r in range(rows[i]):
+            pads.append((next(it, ""), x0 + i, y0 + r))
+    return pads
+
+
+def az_cyborg_ii():
+    return _azeron(_CYBORG_II)
+
+
+def az_cyborg_ii_compact():
+    pads = [p for p in _CYBORG_II if p[2] != 5 and p != ("Page Up", 7, 0)]
+    pads.append(("Page Up", 6, 2))
+    return _azeron(pads)
+
+
+def az_cyborg():
+    return _azeron([p for p in _CYBORG_II if p != ("Tab", 6, 5)])
+
+
+def az_cyborg_compact():
+    pads = [p for p in _CYBORG_II if p[2] != 5 and p not in (("Page Up", 7, 0), ("Tab", 6, 5))]
+    pads.append(("Page Up", 6, 2))
+    return _azeron(pads)
+
+
+def az_keyzen():
+    finger = _towers(5, (4, 4, 4, 4, 4), list("12345QWERTASDFGZXCVB"), x0=0, y0=0)
+    thumb = [("Esc", 6, 0), ("Tab", 7, 0), ("Enter", 8, 0), ("Shift", 8, 1), ("Ctrl", 8, 2),
+             ("Space", 6, 3), ("Alt", 7, 3)]
+    return _azeron(finger + thumb, stick_pos=(6, 1))
+
+
+def az_cyro():
+    finger = _towers(4, (3, 3, 3, 3), list("1234QWERASDF"), x0=0, y0=0)
+    thumb = [("Esc", 5, 0), ("Tab", 6, 0), ("Shift", 5, 3), ("Ctrl", 6, 3)]
+    mouse = [("Mouse Left", 8, 0), ("Mouse Right", 8, 1), ("Mouse Middle", 8, 2)]
+    prof = _azeron(finger + thumb + mouse, stick_pos=(5, 1))
+    short = {"Mouse Left": "LMB", "Mouse Right": "RMB", "Mouse Middle": "MMB"}
+    for k in prof["keys"]:
+        if k["label"] in short:
+            k["input"] = k["label"]
+            k["label"] = short[k["label"]]
+    return prof
+
+
+def az_classic():
+    finger = _towers(4, (4, 4, 4, 4), list("1234QWERASDFZXCV"), x0=1, y0=0)
+    thumb = [("Q", 0, 2), ("E", 5, 2), ("F1", 6, 0), ("Esc", 7, 0), ("F2", 8, 0), ("Tab", 6, 3),
+             ("Space", 8, 2), ("Shift", 8, 3)]
+    return _azeron(finger + thumb, stick_pos=(6, 1))
+
+
+def az_compact():
+    finger = _towers(4, (3, 3, 3, 3), list("1234QWERASDF"), x0=1, y0=0)
+    thumb = [("Q", 0, 1), ("E", 5, 1), ("F1", 6, 0), ("Esc", 7, 0), ("F2", 8, 0), ("Tab", 6, 3),
+             ("Space", 8, 2), ("Shift", 8, 3)]
+    return _azeron(finger + thumb, stick_pos=(6, 1))
+
+
+AZERON_MODELS = [
+    ("Cyborg II", az_cyborg_ii),
+    ("Cyborg II Compact", az_cyborg_ii_compact),
+    ("Cyborg", az_cyborg),
+    ("Cyborg Compact", az_cyborg_compact),
+    ("Keyzen", az_keyzen),
+    ("Cyro", az_cyro),
+    ("Classic", az_classic),
+    ("Compact", az_compact),
+]
+
+
+def azeron_profile(model="Cyborg II"):
+    return dict(AZERON_MODELS)[model]()
 
 
 # ---- controllers -------------------------------------------------------------
@@ -348,12 +431,14 @@ PLAYSTATION = {"lt": "L2", "rt": "R2", "lb": "L1", "rb": "R1", "back": "Create",
 
 
 # ---- catalogue ----------------------------------------------------------------
-DEVICES = ["Azeron Cyborg 2", "Keyboard", "Xbox controller", "PlayStation controller"]
+DEVICES = ["Azeron", "Keyboard", "Xbox controller", "PlayStation controller"]
 
 
 def templates_for(device):
     if device == "Keyboard":
         return [name for name, _ in KEYBOARDS]
+    if device == "Azeron":
+        return [name for name, _ in AZERON_MODELS]
     return [device]
 
 
@@ -369,10 +454,14 @@ def build(device, template=None, layout=None):
         return _controller(XBOX)
     if device == "PlayStation controller":
         return _controller(PLAYSTATION)
+    if template in dict(AZERON_MODELS):
+        return azeron_profile(template)
     return azeron_profile()
 
 
 def suggested_name(device, template=None, layout=None):
     if device == "Keyboard":
         return f"{template} – {layout}"
+    if device == "Azeron":
+        return f"Azeron {template}"
     return device
