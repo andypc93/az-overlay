@@ -3,8 +3,8 @@
 import os
 import tempfile
 
-from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, Property
-from PySide6.QtGui import QBrush, QColor, QFont, QIcon, QLinearGradient, QPainter, QPalette, QPen, QPixmap, QPolygonF
+from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QUrl, Property
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QIcon, QLinearGradient, QPainter, QPalette, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QAbstractItemView, QAbstractSpinBox, QBoxLayout, QCheckBox, QColorDialog, QComboBox, QDialog,
     QDialogButtonBox, QDoubleSpinBox, QFontComboBox, QFormLayout, QFrame, QGridLayout,
@@ -19,6 +19,8 @@ from overlay import (APP_NAME, DEFAULT_COLORS, GAMEPAD_LABELS, PROFILE_KEYS, del
                      KEY_TEXT_FLAGS, fit_key_font, key_text_rect,
                      label_for_token, list_profiles, load_profile, migrate, pad_inputs, parse_input,
                      save_config, save_profile, vks_for_label)
+
+SUPPORT_EMAIL = "andres6perez@gmail.com"
 
 # Theme colors belong to the editor; overlay colors remain part of each layout.
 THEMES = {
@@ -187,6 +189,14 @@ def navigation_icon(name, theme="dark"):
     elif name == "Appearance":
         for x, y in ((12, 12), (20, 12), (16, 20)):
             p.drawEllipse(QPointF(x, y), 5, 5)
+    elif name in ("About", "Help"):
+        p.drawEllipse(QRectF(6, 6, 20, 20))
+        glyph_font = QFont("Segoe UI", 14)
+        glyph_font.setPixelSize(18)
+        glyph_font.setBold(True)
+        p.setFont(glyph_font)
+        p.drawText(QRectF(6, 5, 20, 21), Qt.AlignmentFlag.AlignCenter,
+                   "i" if name == "About" else "?")
     p.end()
     icon = QIcon(pm)
     icon.addPixmap(pm, QIcon.Mode.Selected)
@@ -373,7 +383,16 @@ class ColorButton(QPushButton):
 
     def pick(self):
         dlg = QColorDialog(QColor(self.cfg["colors"][self.key]), self)
+        # The Windows native picker ignores the editor's palette and stylesheet.
+        dlg.setOption(QColorDialog.ColorDialogOption.DontUseNativeDialog, True)
         dlg.setOption(QColorDialog.ColorDialogOption.ShowAlphaChannel, False)
+        theme = "light" if self.cfg.get("theme") == "light" else "dark"
+        dlg.setWindowTitle(f"Choose {self.key.replace('_', ' ')} color")
+        dlg.setPalette(theme_palette(theme))
+        buttons = dlg.findChild(QDialogButtonBox)
+        if buttons:
+            buttons.button(QDialogButtonBox.StandardButton.Ok).setObjectName("primary")
+        dlg.setStyleSheet(style(theme))
         dlg.currentColorChanged.connect(self._live)
         start = self.cfg["colors"][self.key]
         if dlg.exec():
@@ -382,6 +401,7 @@ class ColorButton(QPushButton):
             self.cfg["colors"][self.key] = start
             self.refresh()
             self.on_change()
+        dlg.deleteLater()
 
     def _live(self, col):
         if col.isValid():
@@ -502,7 +522,7 @@ class TemplateDialog(QDialog):
 
 # ---- the window ------------------------------------------------------------
 class SettingsWindow(QWidget):
-    PAGES = ("Layout", "Keys", "Appearance")
+    PAGES = ("Layout", "Keys", "Appearance", "About", "Help")
 
     def __init__(self, overlay):
         super().__init__()
@@ -654,6 +674,8 @@ class SettingsWindow(QWidget):
         self.stack.addWidget(self._layout_page())
         self.stack.addWidget(self._keys_page())
         self.stack.addWidget(self._appearance_page())
+        self.stack.addWidget(self._about_page())
+        self.stack.addWidget(self._help_page())
         self._adapt_appearance_columns()
 
     def resizeEvent(self, event):
@@ -928,6 +950,61 @@ class SettingsWindow(QWidget):
         self.appearance_columns.addWidget(c1, 1)
         self.appearance_columns.addWidget(c2, 1)
         return self._page("Appearance", "Make it yours. Preview your font and colors as you edit.", c0, controls)
+
+    def _about_page(self):
+        overview, overview_layout = card()
+        overview_layout.addWidget(section(APP_NAME))
+        overview_layout.addWidget(muted(
+            "A customizable input overlay for Azeron keypads, keyboards, and controllers. "
+            "Show your inputs as you play with a transparent, click-through overlay "
+            "and live layout editing."))
+
+        credits, credits_layout = card()
+        credits_layout.addWidget(section("Created by Andres Perez"))
+        credits_layout.addWidget(muted(
+            "Copyright 2026 Andres Perez. Released under the MIT License."))
+        credits_layout.addWidget(muted(
+            "Built with PySide6, pynput, and the optional pygame-ce controller backend."))
+        return self._page("About", "Every move. On display.", overview, credits)
+
+    def _help_page(self):
+        contact, contact_layout = card()
+        contact_layout.addWidget(section("Get in touch"))
+        contact_layout.addWidget(muted(
+            "Have a question, found a bug, or want to suggest a feature? Email Andres. "
+            "For a problem, include your device, what you expected, and what happened."))
+        address = QLabel(SUPPORT_EMAIL)
+        address.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse |
+                                       Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        contact_layout.addWidget(address)
+        email_button = QPushButton("Email Andres")
+        email_button.setObjectName("primary")
+        email_button.setToolTip("Open a draft in your default email app")
+        email_button.clicked.connect(self._email_support)
+        contact_layout.addWidget(email_button, 0, Qt.AlignmentFlag.AlignLeft)
+        contact_layout.addWidget(muted(
+            "Opens your email app. You can also copy the address above into your webmail."))
+
+        guide, guide_layout = card()
+        guide_layout.addWidget(section("Quick start"))
+        for text in (
+            "1. Choose + New layout to start from a device template.",
+            "2. On Layout, choose Edit on screen to move or resize your overlay, then Done editing.",
+            "3. On Keys, select a pad and choose Record input to assign a key or controller button.",
+            "4. On Appearance, customize the font and colors. Use Save layout to update your named layout.",
+        ):
+            guide_layout.addWidget(muted(text))
+        guide_layout.addWidget(muted(
+            "If the overlay is hidden, turn on Overlay visible below and use windowed "
+            "or borderless mode in your game."))
+        return self._page("Help", "Get started or ask for a hand.", contact, guide)
+
+    def _email_support(self):
+        if not QDesktopServices.openUrl(QUrl(f"mailto:{SUPPORT_EMAIL}?subject=AZ-Overlay%20help")):
+            QMessageBox.information(
+                self, "Email Andres",
+                f"Could not open your email app. You can write to {SUPPORT_EMAIL} "
+                "using your preferred email service.")
 
     # ---- behaviour ----------------------------------------------------
     def _theme_changed(self):

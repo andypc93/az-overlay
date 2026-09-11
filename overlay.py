@@ -22,7 +22,7 @@ import time
 
 from pynput import keyboard, mouse
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QFont, QFontMetricsF, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QAction, QBrush, QColor, QFont, QFontMetrics, QFontMetricsF, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
 
 from gamepad import Gamepad, is_gamepad_input
@@ -330,6 +330,7 @@ def delete_profile(name):
 
 
 KEY_TEXT_FLAGS = Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap
+STICK_LABEL_FLAGS = Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight
 
 
 def key_text_rect(rect, shape="rect"):
@@ -468,6 +469,7 @@ class Overlay(QWidget):
                 p.text_rect = key_text_rect(p.rect, p.shape)
                 p.font = fit_key_font(p.label, self.font, p.text_rect, self)
                 p.capture_font = fit_key_font("press\na key", self.font, p.text_rect, self)
+        self.layout_stick_labels()
 
         self.hotkeys = {name: vks_for_label(cfg["hotkeys"].get(name, ""))
                         for name in ("toggle", "quit", "settings")}
@@ -521,6 +523,36 @@ class Overlay(QWidget):
                 pad.text_pos = QPointF(cx + dx * rad * 1.4, cy + dy * rad * 1.4)
                 self.pads.append(pad)
 
+    def layout_stick_labels(self):
+        """Hide stick names when their rendered text would cover an input."""
+        self.stick_label_font = QFont(self.font.family(), max(4, int(self.font.pointSize() * 0.75)))
+        label_metrics = QFontMetricsF(self.stick_label_font, self)
+        input_metrics = QFontMetrics(self.font, self)
+        obstacles = [pad.rect for pad in self.pads]
+        for pad in self.pads:
+            if pad.shape == "dot":
+                # Cache the same baseline used to paint direction labels.
+                pad.text_origin = QPointF(
+                    pad.text_pos.x() - input_metrics.horizontalAdvance(pad.label) / 2,
+                    pad.text_pos.y() + input_metrics.ascent() / 2 - 1,
+                )
+                if pad.label:
+                    obstacles.append(QRectF(input_metrics.boundingRect(pad.label)).translated(pad.text_origin))
+        for st in self.sticks:
+            rad = min(st.rect.width(), st.rect.height()) * 0.30
+            # Include the full travel of an analog knob, so moving it cannot
+            # make a visible name collide or flicker.
+            reach = rad * (1.02 if st.axes else 1)
+            center = st.rect.center()
+            obstacles.append(QRectF(center.x() - reach, center.y() - reach, 2 * reach, 2 * reach))
+        for st in self.sticks:
+            st.label_rect = st.rect.adjusted(6, 4, -6, -4)
+            label = st.spec.get("label", "")
+            bounds = label_metrics.boundingRect(st.label_rect, STICK_LABEL_FLAGS, label)
+            st.label_visible = bool(label) and st.label_rect.contains(bounds) and not any(
+                bounds.adjusted(-2, -2, 2, 2).intersects(obstacle) for obstacle in obstacles
+            )
+
     # ---- painting -----------------------------------------------------
     @staticmethod
     def mix(a, b, t):
@@ -557,11 +589,10 @@ class Overlay(QWidget):
                 p.setBrush(QBrush(self.mix(c["idle_outline"], c["pressed_fill"], st.level)))
                 p.setPen(QPen(self.mix(c["idle_outline"], c["pressed_outline"], st.level), 1.2))
                 p.drawEllipse(QRectF(kx - kr, ky - kr, 2 * kr, 2 * kr))
-            if st.spec.get("label"):
+            if st.label_visible:
                 p.setPen(c["idle_text"])
-                p.setFont(QFont(self.font.family(), max(4, int(self.font.pointSize() * 0.75))))
-                p.drawText(st.rect.adjusted(6, 4, -6, -4), Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight,
-                           st.spec["label"])
+                p.setFont(self.stick_label_font)
+                p.drawText(st.label_rect, STICK_LABEL_FLAGS, st.spec["label"])
                 p.setFont(self.font)
 
         for pad in self.pads:
@@ -603,9 +634,7 @@ class Overlay(QWidget):
             if pad.shape == "dot":
                 p.setFont(self.font)
                 p.setPen(self.mix(c["idle_text"], c["pressed_outline"], t))
-                fm = p.fontMetrics()
-                tw = fm.horizontalAdvance(pad.label)
-                p.drawText(QPointF(pad.text_pos.x() - tw / 2, pad.text_pos.y() + fm.ascent() / 2 - 1), pad.label)
+                p.drawText(pad.text_origin, pad.label)
             else:
                 p.setPen(text)
                 p.setFont(pad.font)
