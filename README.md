@@ -30,7 +30,7 @@ Settings. Everything applies live and autosaves to `config.json`:
 - **Keys**: table of pads (label, col, row). Select a row, hit "Capture key",
   press the Cyborg button: label set. Empty label = pad hidden (fully
   transparent). Thumbstick keys editable too.
-- **Text & Colors**: font family, size, bold; fill, border and text color for idle and pressed states.
+- **Appearance**: live preview of an idle and a pressed key; font family, size, bold; fill, border and text color for idle and pressed states.
 
 ## Hotkeys (always Ctrl+Alt + key, editable)
 
