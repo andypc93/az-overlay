@@ -13,8 +13,9 @@ python overlay.py
 `run.bat` does the same without a console window.
 
 **No Python?** Run `build.bat` (needs `pip install pyinstaller`) and use
-`distz-overlay.exe` with `config.json` next to it. Or grab the exe from the
-GitHub release. Put a shortcut to it in
+`distz-overlay.exe`, or grab the exe from the GitHub release. The exe keeps
+its settings and saved layouts in `%APPDATA%z-overlay`, so replacing or
+rebuilding the exe never erases them. Put a shortcut to it in
 `shell:startup` if you want it at login.
 
 ## Settings GUI
@@ -22,8 +23,8 @@ GitHub release. Put a shortcut to it in
 A tray icon appears while running. Double-click it (or Ctrl+Alt+S) to open
 Settings. Everything applies live and autosaves to `config.json`:
 
-- **Layouts**: top bar saves/loads named layouts (`profiles/*.json` next to
-  the exe). Ship one per game or Azeron profile.
+- **Layouts**: header saves/loads named layouts (`profiles/*.json` in the data
+  folder). Ship one per game or Azeron profile.
 - **Layout tab**: X/Y, scale, opacity, pad size. "Move / resize with mouse"
   makes the overlay solid and clickable: drag to move, scroll-wheel to resize,
   click a key then press the Cyborg button to rebind it, right-click to clear.

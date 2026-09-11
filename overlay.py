@@ -14,6 +14,7 @@ Ctrl+Alt+Q quits (editable in config).
 import json
 import os
 import queue
+import shutil
 import sys
 import time
 
@@ -22,10 +23,38 @@ from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
 
-# Frozen exe: config.json sits next to the .exe so users can edit it.
-_BASE = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
+FROZEN = getattr(sys, "frozen", False)
+_HERE = os.path.dirname(sys.executable if FROZEN else os.path.abspath(__file__))
+# Bundled defaults (inside the exe when frozen, the repo when running from source).
+_DEFAULTS = getattr(sys, "_MEIPASS", _HERE)
+# User data. The exe keeps it in %APPDATA% so rebuilding / replacing the exe
+# never touches saved settings or layouts. From source it lives in the repo.
+if FROZEN:
+    _BASE = os.path.join(os.environ.get("APPDATA", _HERE), "az-overlay")
+else:
+    _BASE = _HERE
 CONFIG_PATH = os.path.join(_BASE, "config.json")
 PROFILE_DIR = os.path.join(_BASE, "profiles")
+
+
+def ensure_user_data():
+    """First run: seed %APPDATA%\az-overlay from the bundled defaults (or from
+    files next to the exe, for installs that used to keep them there)."""
+    if not FROZEN:
+        return
+    os.makedirs(PROFILE_DIR, exist_ok=True)
+    if not os.path.exists(CONFIG_PATH):
+        for src in (os.path.join(_HERE, "config.json"), os.path.join(_DEFAULTS, "config.json")):
+            if os.path.exists(src):
+                shutil.copy(src, CONFIG_PATH)
+                break
+    if not os.listdir(PROFILE_DIR):
+        for src in (os.path.join(_HERE, "profiles"), os.path.join(_DEFAULTS, "profiles")):
+            if os.path.isdir(src):
+                for f in os.listdir(src):
+                    if f.lower().endswith(".json"):
+                        shutil.copy(os.path.join(src, f), os.path.join(PROFILE_DIR, f))
+                break
 
 # What a saved layout profile carries (hotkeys stay global in config.json).
 PROFILE_KEYS = ("x", "y", "scale", "opacity", "cell_w", "cell_h", "gap",
@@ -562,6 +591,7 @@ def make_icon(color="#c9d400"):
 
 
 def main():
+    ensure_user_data()
     try:
         cfg = load_config()
     except (OSError, ValueError) as e:
