@@ -158,21 +158,22 @@ QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: tran
 
 
 # ---- small building blocks ------------------------------------------------
-def navigation_icon(name):
+def navigation_icon(name, theme="dark"):
     """Small, resolution-independent tiles drawn with the app's own glyphs."""
     pm = QPixmap(96, 96)
     pm.setDevicePixelRatio(3)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    accent = QColor(THEMES["dark"]["accent"])
+    t = THEMES[theme]
+    accent = QColor(t["accent"])
     p.setPen(Qt.PenStyle.NoPen)
     gradient = QLinearGradient(0, 0, 32, 32)
     gradient.setColorAt(0, accent.lighter(115))
     gradient.setColorAt(1, accent)
     p.setBrush(gradient)
     p.drawRoundedRect(QRectF(0, 0, 32, 32), 8, 8)
-    p.setPen(QPen(QColor(THEMES["dark"]["accent_text"]), 1.6))
+    p.setPen(QPen(QColor(t["accent_text"]), 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     if name == "Layout":
         p.drawRoundedRect(QRectF(7, 7, 18, 18), 3, 3)
@@ -536,7 +537,7 @@ class SettingsWindow(QWidget):
         self.nav.setAccessibleName("Settings pages")
         self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         for name in self.PAGES:
-            QListWidgetItem(navigation_icon(name), name, self.nav)
+            QListWidgetItem(navigation_icon(name, theme), name, self.nav)
         self.stack = QStackedWidget()
         self.nav.currentRowChanged.connect(self._page_changed)
         sidebar = QWidget()
@@ -934,6 +935,8 @@ class SettingsWindow(QWidget):
         self.cfg["theme"] = theme
         self.setPalette(theme_palette(theme))
         self.setStyleSheet(style(theme))
+        for row, name in enumerate(self.PAGES):
+            self.nav.item(row).setIcon(navigation_icon(name, theme))
         for button in self.color_buttons:
             button.refresh()
         # Update custom item brushes without rebuilding the table or losing selection.
