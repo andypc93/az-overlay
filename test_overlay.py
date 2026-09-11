@@ -43,3 +43,23 @@ def test_label_roundtrip():
 
 def test_label_case_insensitive():
     assert overlay.vks_for_label("page up") == overlay.vks_for_label("Page Up")
+
+
+def test_profile_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.setattr(overlay, "PROFILE_DIR", str(tmp_path))
+    cfg = overlay.load_config()
+    cfg["x"] = 999
+    overlay.save_profile("my layout", cfg)
+    assert overlay.list_profiles() == ["my layout"]
+    assert overlay.load_profile("my layout")["x"] == 999
+    assert "hotkeys" not in overlay.load_profile("my layout")
+    overlay.delete_profile("my layout")
+    assert overlay.list_profiles() == []
+
+
+def test_profile_name_sanitised(tmp_path, monkeypatch):
+    monkeypatch.setattr(overlay, "PROFILE_DIR", str(tmp_path))
+    overlay.save_profile("a/b:c", overlay.load_config())
+    assert overlay.list_profiles() == ["abc"]
+    with pytest.raises(ValueError):
+        overlay.save_profile("///", overlay.load_config())

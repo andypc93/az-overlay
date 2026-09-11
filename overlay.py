@@ -25,6 +25,11 @@ from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
 # Frozen exe: config.json sits next to the .exe so users can edit it.
 _BASE = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(_BASE, "config.json")
+PROFILE_DIR = os.path.join(_BASE, "profiles")
+
+# What a saved layout profile carries (hotkeys stay global in config.json).
+PROFILE_KEYS = ("x", "y", "scale", "opacity", "cell_w", "cell_h", "gap",
+                "colors", "font", "keys", "joystick")
 
 # Canonical label -> Windows virtual-key codes. First entry is the one shown
 # when a key is captured from the keyboard.
@@ -133,14 +138,48 @@ def save_config(cfg):
     os.replace(tmp, CONFIG_PATH)
 
 
+def _profile_path(name):
+    safe = "".join(ch for ch in name if ch not in '\\/:*?"<>|').strip()
+    if not safe:
+        raise ValueError("invalid layout name")
+    return os.path.join(PROFILE_DIR, safe + ".json")
+
+
+def list_profiles():
+    if not os.path.isdir(PROFILE_DIR):
+        return []
+    return sorted(f[:-5] for f in os.listdir(PROFILE_DIR) if f.lower().endswith(".json"))
+
+
+def load_profile(name):
+    with open(_profile_path(name), encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_profile(name, cfg):
+    os.makedirs(PROFILE_DIR, exist_ok=True)
+    data = {k: cfg[k] for k in PROFILE_KEYS if k in cfg}
+    with open(_profile_path(name), "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+
+
+def delete_profile(name):
+    try:
+        os.remove(_profile_path(name))
+    except FileNotFoundError:
+        pass
+
+
 class Pad:
     """One drawable element: a key cell or a joystick direction."""
 
-    def __init__(self, label, rect, vks, shape="rect"):
+    def __init__(self, label, rect, vks, shape="rect", source=None):
         self.label = label
         self.rect = rect
         self.vks = vks
         self.shape = shape
+        self.source = source  # ("key", index) or ("joy", "up"|"down"|"left"|"right")
         self.level = 0.0  # 0 idle .. 1 fully lit
         self.text_pos = None
 
@@ -162,7 +201,9 @@ class Overlay(QWidget):
         self.static = []
         self.edit_mode = False
         self.capturing = False
+        self.capture_pad = None  # pad being rebound by clicking it in edit mode
         self._drag_origin = None
+        self._press_pos = None
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -235,12 +276,12 @@ class Overlay(QWidget):
         return max(r.right() for r in rects) + 4, max(r.bottom() for r in rects) + 4
 
     def build(self):
-        for k in self.cfg["keys"]:
+        for i, k in enumerate(self.cfg["keys"]):
             try:
                 vks = vks_for_label(k["label"])
             except ValueError:
                 vks = set()
-            self.pads.append(Pad(k["label"], self.cell_rect(k["col"], k["row"]), vks))
+            self.pads.append(Pad(k["label"], self.cell_rect(k["col"], k["row"]), vks, source=("key", i)))
 
         j = self.cfg.get("joystick")
         if j and j.get("enabled", True):
@@ -257,7 +298,8 @@ class Overlay(QWidget):
                 except ValueError:
                     vks = set()
                 px, py = cx + dx * rad * 0.62, cy + dy * rad * 0.62
-                pad = Pad(label, QRectF(px - dot_r, py - dot_r, 2 * dot_r, 2 * dot_r), vks, shape="dot")
+                pad = Pad(label, QRectF(px - dot_r, py - dot_r, 2 * dot_r, 2 * dot_r), vks,
+                          shape="dot", source=("joy", name))
                 pad.text_pos = QPointF(cx + dx * rad * 1.4, cy + dy * rad * 1.4)
                 self.pads.append(pad)
 
@@ -286,13 +328,27 @@ class Overlay(QWidget):
                 p.drawEllipse(rect)
 
         for pad in self.pads:
+            if pad is self.capture_pad:
+                hot = QColor(c["pressed_outline"])
+                p.setBrush(QBrush(QColor(hot.red(), hot.green(), hot.blue(), 60)))
+                p.setPen(QPen(hot, 2, Qt.PenStyle.DashLine))
+                if pad.shape == "rect":
+                    p.drawRoundedRect(pad.rect, self.radius, self.radius)
+                    p.setPen(hot)
+                    p.drawText(pad.rect, Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, "press\na key")
+                else:
+                    p.drawEllipse(pad.rect)
+                continue
             if not pad.label:
-                if self.edit_mode:  # show unassigned pads faintly so they can be placed
+                if self.edit_mode:  # show unassigned pads faintly so they can be clicked and bound
                     ghost = QColor(c["idle_outline"])
-                    ghost.setAlpha(70)
+                    ghost.setAlpha(90)
                     p.setBrush(Qt.BrushStyle.NoBrush)
                     p.setPen(QPen(ghost, 1, Qt.PenStyle.DashLine))
-                    p.drawRoundedRect(pad.rect, self.radius, self.radius)
+                    if pad.shape == "rect":
+                        p.drawRoundedRect(pad.rect, self.radius, self.radius)
+                    else:
+                        p.drawEllipse(pad.rect)
                 continue
 
             t = pad.level
@@ -329,17 +385,18 @@ class Overlay(QWidget):
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(frame, 2, Qt.PenStyle.DashLine))
             p.drawRect(self.rect().adjusted(1, 1, -2, -2))
-            hint = "drag to move  ·  scroll to resize"
+            hint = ("drag: move  \u00b7  wheel: resize  \u00b7  click a key, then press its button: rebind  "
+                    "\u00b7  right-click: clear")
             p.setFont(QFont("Segoe UI", 9))
-            fm = p.fontMetrics()
-            tw = fm.horizontalAdvance(hint) + 16
-            bar = QRectF(self.width() - tw - 4, 4, tw, fm.height() + 6)
-            bg = QColor(0, 0, 0, 170)
+            flags = Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap
+            avail = QRectF(6, 8, self.width() - 12, self.height() - 12)
+            need = p.boundingRect(avail, flags, hint)
+            bar = QRectF(need.x() - 8, need.y() - 3, need.width() + 16, need.height() + 6)
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(bg)
+            p.setBrush(QColor(0, 0, 0, 190))
             p.drawRoundedRect(bar, 5, 5)
             p.setPen(frame)
-            p.drawText(bar, Qt.AlignmentFlag.AlignCenter, hint)
+            p.drawText(need, flags, hint)
         p.end()
 
     # ---- edit mode: drag to move, wheel to scale -----------------------
@@ -347,27 +404,68 @@ class Overlay(QWidget):
         if on == self.edit_mode:
             return
         self.edit_mode = on
+        if not on:
+            self.capture_pad = None
+            self.capturing = False
         was_visible = self.isVisible()
         self.setWindowFlag(Qt.WindowType.WindowTransparentForInput, not on)
         self.setWindowFlag(Qt.WindowType.WindowDoesNotAcceptFocus, not on)
+        self.setWindowOpacity(1.0 if on else self.cfg.get("opacity", 0.85))  # solid while editing
         if was_visible:
             self.show()
         self.setCursor(Qt.CursorShape.SizeAllCursor if on else Qt.CursorShape.ArrowCursor)
         self.update()
 
+    def pad_at(self, pos):
+        for pad in self.pads:
+            if pad.rect.contains(pos):
+                return pad
+        return None
+
     def mousePressEvent(self, e):
-        if self.edit_mode and e.button() == Qt.MouseButton.LeftButton:
+        if not self.edit_mode:
+            return
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._press_pos = e.position()
             self._drag_origin = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+        elif e.button() == Qt.MouseButton.RightButton:
+            pad = self.pad_at(e.position())
+            self.capture_pad = None
+            self.capturing = False
+            if pad is not None and pad.source and pad.source[0] == "key":
+                self.set_pad_label(pad, "")
+            self.update()
 
     def mouseMoveEvent(self, e):
         if self.edit_mode and self._drag_origin is not None:
             self.move(e.globalPosition().toPoint() - self._drag_origin)
 
     def mouseReleaseEvent(self, e):
-        if self.edit_mode and self._drag_origin is not None:
-            self._drag_origin = None
+        if not self.edit_mode or self._drag_origin is None:
+            return
+        self._drag_origin = None
+        moved = (e.position() - self._press_pos).manhattanLength() if self._press_pos else 99
+        if moved < 4:
+            pad = self.pad_at(e.position())
+            if pad is not None and pad.source:
+                self.capture_pad = pad
+                self.capturing = True
+            else:
+                self.capture_pad = None
+                self.capturing = False
+            self.update()
+        else:
             self.cfg["x"], self.cfg["y"] = self.x(), self.y()
             self.config_changed.emit()
+
+    def set_pad_label(self, pad, label):
+        kind, ref = pad.source
+        if kind == "key":
+            self.cfg["keys"][ref]["label"] = label
+        else:
+            self.cfg["joystick"][ref] = label
+        self.apply()
+        self.config_changed.emit()
 
     def wheelEvent(self, e):
         if not self.edit_mode:
@@ -407,7 +505,14 @@ class Overlay(QWidget):
                     self.pressed.add(vk)
                     if self.capturing:
                         self.capturing = False
-                        self.key_captured.emit(vk)
+                        if self.capture_pad is not None:
+                            pad, self.capture_pad = self.capture_pad, None
+                            label = label_for_vk(vk)
+                            if label is not None:
+                                self.set_pad_label(pad, label)
+                            self.update()
+                        else:
+                            self.key_captured.emit(vk)
                     else:
                         self.check_hotkeys(vk)
             else:
@@ -464,6 +569,7 @@ def main():
         sys.exit(1)
 
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")  # consistent widget rendering; stylesheet in settings_ui relies on it
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("az-overlay")
     icon = make_icon()

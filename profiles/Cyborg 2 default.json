@@ -1,0 +1,185 @@
+{
+  "x": 20,
+  "y": 20,
+  "scale": 0.5,
+  "opacity": 0.85,
+  "cell_w": 100,
+  "cell_h": 140,
+  "gap": 8,
+  "colors": {
+    "idle_fill": "#1e1e1e",
+    "idle_outline": "#c9d400",
+    "pressed_fill": "#c9d400",
+    "idle_text": "#ffffff",
+    "pressed_text": "#000000",
+    "pressed_outline": "#c9d400"
+  },
+  "font": {
+    "family": "Segoe UI",
+    "size": 13,
+    "bold": true
+  },
+  "keys": [
+    {
+      "label": "Page Up",
+      "col": 7,
+      "row": 0
+    },
+    {
+      "label": "9",
+      "col": 1,
+      "row": 1
+    },
+    {
+      "label": "Alt",
+      "col": 2,
+      "row": 1
+    },
+    {
+      "label": "H",
+      "col": 3,
+      "row": 1
+    },
+    {
+      "label": "X",
+      "col": 4,
+      "row": 1
+    },
+    {
+      "label": "F1",
+      "col": 6,
+      "row": 1
+    },
+    {
+      "label": "Esc",
+      "col": 7,
+      "row": 1
+    },
+    {
+      "label": "F2",
+      "col": 8,
+      "row": 1
+    },
+    {
+      "label": "0",
+      "col": 1,
+      "row": 2
+    },
+    {
+      "label": "",
+      "col": 2,
+      "row": 2
+    },
+    {
+      "label": "G",
+      "col": 3,
+      "row": 2
+    },
+    {
+      "label": "I",
+      "col": 4,
+      "row": 2
+    },
+    {
+      "label": "Page Down",
+      "col": 7,
+      "row": 2
+    },
+    {
+      "label": "Q",
+      "col": 0,
+      "row": 3
+    },
+    {
+      "label": "B",
+      "col": 1,
+      "row": 3
+    },
+    {
+      "label": "Z",
+      "col": 2,
+      "row": 3
+    },
+    {
+      "label": "V",
+      "col": 3,
+      "row": 3
+    },
+    {
+      "label": "F",
+      "col": 4,
+      "row": 3
+    },
+    {
+      "label": "E",
+      "col": 5,
+      "row": 3
+    },
+    {
+      "label": "J",
+      "col": 8,
+      "row": 3
+    },
+    {
+      "label": "R",
+      "col": 1,
+      "row": 4
+    },
+    {
+      "label": "Shift",
+      "col": 2,
+      "row": 4
+    },
+    {
+      "label": "Space",
+      "col": 3,
+      "row": 4
+    },
+    {
+      "label": "Ctrl",
+      "col": 4,
+      "row": 4
+    },
+    {
+      "label": "Caps Lock",
+      "col": 8,
+      "row": 4
+    },
+    {
+      "label": "L",
+      "col": 1,
+      "row": 5
+    },
+    {
+      "label": "M",
+      "col": 2,
+      "row": 5
+    },
+    {
+      "label": "",
+      "col": 3,
+      "row": 5
+    },
+    {
+      "label": "C",
+      "col": 4,
+      "row": 5
+    },
+    {
+      "label": "Tab",
+      "col": 6,
+      "row": 5
+    }
+  ],
+  "joystick": {
+    "col": 6,
+    "row": 3,
+    "cols": 2,
+    "rows": 2,
+    "up": "W",
+    "left": "A",
+    "down": "S",
+    "right": "D",
+    "enabled": true
+  }
+}

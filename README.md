@@ -22,8 +22,11 @@ GitHub release. Put a shortcut to it in
 A tray icon appears while running. Double-click it (or Ctrl+Alt+S) to open
 Settings. Everything applies live and autosaves to `config.json`:
 
-- **Layout**: X/Y, scale, opacity, pad size. "Move / resize with mouse" lets
-  you drag the overlay and scroll-wheel to resize it.
+- **Layouts**: top bar saves/loads named layouts (`profiles/*.json` next to
+  the exe). Ship one per game or Azeron profile.
+- **Layout tab**: X/Y, scale, opacity, pad size. "Move / resize with mouse"
+  makes the overlay solid and clickable: drag to move, scroll-wheel to resize,
+  click a key then press the Cyborg button to rebind it, right-click to clear.
 - **Keys**: table of pads (label, col, row). Select a row, hit "Capture key",
   press the Cyborg button: label set. Empty label = pad hidden (fully
   transparent). Thumbstick keys editable too.

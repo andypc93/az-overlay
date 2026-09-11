@@ -1,14 +1,16 @@
 """Settings window for the overlay. Every edit applies live and autosaves."""
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QColorDialog, QDoubleSpinBox, QFontComboBox, QFormLayout,
-    QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton,
-    QSlider, QSpinBox, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
+    QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+    QLineEdit, QMessageBox, QPushButton,
+    QAbstractSpinBox, QSlider, QSpinBox, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
-from overlay import label_for_vk, save_config, vks_for_label
+from overlay import (PROFILE_KEYS, delete_profile, label_for_vk, list_profiles, load_profile,
+                     save_config, save_profile, vks_for_label)
 
 COLOR_FIELDS = [
     ("idle_fill", "Fill"),
@@ -19,6 +21,23 @@ COLOR_FIELDS = [
     ("pressed_text", "Text"),
 ]
 
+def dark_palette():
+    """Fusion draws spin arrows, checkmarks etc. from the palette, so make it dark."""
+    pal = QPalette()
+    for role, col in (
+        (QPalette.ColorRole.Window, "#1b1b1b"), (QPalette.ColorRole.WindowText, "#e8e8e8"),
+        (QPalette.ColorRole.Base, "#262626"), (QPalette.ColorRole.AlternateBase, "#202020"),
+        (QPalette.ColorRole.Text, "#e8e8e8"), (QPalette.ColorRole.Button, "#2a2a2a"),
+        (QPalette.ColorRole.ButtonText, "#e8e8e8"), (QPalette.ColorRole.Highlight, "#c9d400"),
+        (QPalette.ColorRole.HighlightedText, "#000000"), (QPalette.ColorRole.ToolTipBase, "#2a2a2a"),
+        (QPalette.ColorRole.ToolTipText, "#e8e8e8"), (QPalette.ColorRole.PlaceholderText, "#8a8a8a"),
+    ):
+        pal.setColor(role, QColor(col))
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor("#666"))
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor("#666"))
+    return pal
+
+
 STYLE = """
 QWidget { background: #1b1b1b; color: #e8e8e8; font-family: 'Segoe UI'; font-size: 10pt; }
 QGroupBox { border: 1px solid #333; border-radius: 6px; margin-top: 10px; padding: 8px 6px 6px 6px; }
@@ -26,7 +45,7 @@ QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color:
 QPushButton { background: #2a2a2a; border: 1px solid #444; border-radius: 5px; padding: 5px 12px; }
 QPushButton:hover { border-color: #c9d400; }
 QPushButton:checked { background: #c9d400; color: #000; border-color: #c9d400; }
-QLineEdit, QSpinBox, QDoubleSpinBox { background: #262626; border: 1px solid #444; border-radius: 4px; padding: 3px; }
+QLineEdit, QSpinBox, QDoubleSpinBox { background: #262626; border: 1px solid #444; border-radius: 4px; padding: 3px; min-height: 26px; }
 QTableWidget { background: #202020; gridline-color: #333; border: 1px solid #333; }
 QHeaderView::section { background: #2a2a2a; padding: 4px; border: none; }
 QTabWidget::pane { border: 1px solid #333; border-radius: 6px; }
@@ -35,6 +54,29 @@ QTabBar::tab:selected { background: #c9d400; color: #000; }
 QSlider::groove:horizontal { height: 4px; background: #444; border-radius: 2px; }
 QSlider::handle:horizontal { width: 14px; margin: -6px 0; background: #c9d400; border-radius: 7px; }
 """
+
+
+def stepper(spin):
+    """Wrap a spinbox with big - / + buttons (the native arrows are tiny)."""
+    spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+    spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    w = QWidget()
+    h = QHBoxLayout(w)
+    h.setContentsMargins(0, 0, 0, 0)
+    h.setSpacing(4)
+    minus, plus = QPushButton("\u2212"), QPushButton("+")
+    for b in (minus, plus):
+        b.setFixedSize(34, 30)
+        b.setAutoRepeat(True)
+        b.setAutoRepeatDelay(350)
+        b.setAutoRepeatInterval(60)
+        b.setStyleSheet("font-size: 14pt; padding: 0;")
+    minus.clicked.connect(spin.stepDown)
+    plus.clicked.connect(spin.stepUp)
+    h.addWidget(minus)
+    h.addWidget(spin, 1)
+    h.addWidget(plus)
+    return w
 
 
 class ColorButton(QPushButton):
@@ -77,6 +119,7 @@ class SettingsWindow(QWidget):
         self.cfg = overlay.cfg
         self.setWindowTitle("az-overlay settings")
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        self.setPalette(dark_palette())
         self.setStyleSheet(STYLE)
         self.resize(560, 620)
         self._loading = False
@@ -87,11 +130,10 @@ class SettingsWindow(QWidget):
         self.save_timer.timeout.connect(self._save_now)
 
         root = QVBoxLayout(self)
-        tabs = QTabWidget()
-        root.addWidget(tabs)
-        tabs.addTab(self._layout_tab(), "Layout")
-        tabs.addTab(self._keys_tab(), "Keys")
-        tabs.addTab(self._colors_tab(), "Text && Colors")
+        root.addLayout(self._profile_bar())
+        self.tabs = QTabWidget()
+        root.addWidget(self.tabs)
+        self._build_tabs()
 
         bottom = QHBoxLayout()
         self.status = QLabel("")
@@ -110,6 +152,111 @@ class SettingsWindow(QWidget):
         overlay.key_captured.connect(self._on_key_captured)
 
     # ---- tabs ---------------------------------------------------------
+    def _build_tabs(self):
+        self.tabs.addTab(self._layout_tab(), "Layout")
+        self.tabs.addTab(self._keys_tab(), "Keys")
+        self.tabs.addTab(self._colors_tab(), "Text && Colors")
+
+    def _rebuild_tabs(self):
+        """Recreate every widget from cfg (after loading a profile)."""
+        idx = self.tabs.currentIndex()
+        self.btn_move.setChecked(False)
+        self.btn_capture.setChecked(False)
+        while self.tabs.count():
+            w = self.tabs.widget(0)
+            self.tabs.removeTab(0)
+            w.deleteLater()
+        self._build_tabs()
+        self.tabs.setCurrentIndex(idx)
+
+    # ---- layout profiles ----------------------------------------------
+    def _profile_bar(self):
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Layout:"))
+        self.profile_combo = QComboBox()
+        self.profile_combo.setMinimumWidth(180)
+        self.profile_combo.activated.connect(self._profile_selected)
+        row.addWidget(self.profile_combo, 1)
+        b_save = QPushButton("Save")
+        b_save.setToolTip("Overwrite the selected layout with the current settings")
+        b_save.clicked.connect(self._profile_save)
+        b_new = QPushButton("Save as…")
+        b_new.clicked.connect(self._profile_save_as)
+        b_del = QPushButton("Delete")
+        b_del.clicked.connect(self._profile_delete)
+        for b in (b_save, b_new, b_del):
+            row.addWidget(b)
+        self._refresh_profiles()
+        return row
+
+    def _refresh_profiles(self):
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.clear()
+        self.profile_combo.addItem("(unsaved)")
+        for name in list_profiles():
+            self.profile_combo.addItem(name)
+        current = self.cfg.get("profile", "")
+        i = self.profile_combo.findText(current) if current else 0
+        self.profile_combo.setCurrentIndex(max(0, i))
+        self.profile_combo.blockSignals(False)
+
+    def _profile_selected(self, index):
+        if index == 0:
+            return
+        self.profile_combo.setCurrentIndex(index)
+        name = self.profile_combo.itemText(index)
+        try:
+            data = load_profile(name)
+        except (OSError, ValueError) as e:
+            self._flash(f"Could not load: {e}")
+            return
+        for k in PROFILE_KEYS:
+            if k in data:
+                self.cfg[k] = data[k]
+        self.cfg["profile"] = name
+        self._rebuild_tabs()
+        self._apply()
+        self._flash(f"Loaded layout '{name}'")
+
+    def _profile_save(self):
+        if self.profile_combo.currentIndex() == 0:
+            self._profile_save_as()
+            return
+        name = self.profile_combo.currentText()
+        save_profile(name, self.cfg)
+        self.cfg["profile"] = name
+        self._schedule_save()
+        self._flash(f"Saved layout '{name}'")
+
+    def _profile_save_as(self):
+        name, ok = QInputDialog.getText(self, "Save layout", "Layout name:",
+                                        text=self.cfg.get("profile", ""))
+        name = name.strip()
+        if not ok or not name:
+            return
+        try:
+            save_profile(name, self.cfg)
+        except (OSError, ValueError) as e:
+            self._flash(f"Could not save: {e}")
+            return
+        self.cfg["profile"] = name
+        self._refresh_profiles()
+        self._schedule_save()
+        self._flash(f"Saved layout '{name}'")
+
+    def _profile_delete(self):
+        if self.profile_combo.currentIndex() == 0:
+            return
+        name = self.profile_combo.currentText()
+        if QMessageBox.question(self, "Delete layout", f"Delete layout '{name}'?") != QMessageBox.StandardButton.Yes:
+            return
+        delete_profile(name)
+        if self.cfg.get("profile") == name:
+            self.cfg["profile"] = ""
+        self._refresh_profiles()
+        self._schedule_save()
+        self._flash(f"Deleted layout '{name}'")
+
     def _layout_tab(self):
         w = QWidget()
         v = QVBoxLayout(w)
@@ -119,7 +266,9 @@ class SettingsWindow(QWidget):
         self.btn_move.setToolTip("Drag the overlay to move it. Scroll wheel over it to resize.")
         self.btn_move.toggled.connect(self._toggle_move)
         v.addWidget(self.btn_move)
-        tip = QLabel("While on: drag the overlay to move it, scroll over it to resize. Unassigned pads show as dashed ghosts.")
+        tip = QLabel("While on: drag the overlay to move it, scroll over it to resize. "
+                     "Click a key then press the Cyborg button to rebind it. Right-click a key to clear it. "
+                     "Unassigned pads show as dashed ghosts.")
         tip.setWordWrap(True)
         tip.setStyleSheet("color:#8a8a8a;")
         v.addWidget(tip)
@@ -139,9 +288,9 @@ class SettingsWindow(QWidget):
         self.sl_opacity.setValue(int(self.cfg.get("opacity", 0.85) * 100))
         self.sl_opacity.valueChanged.connect(self._opacity)
         self.lbl_opacity.setText(f"{self.sl_opacity.value()}%")
-        f.addRow("X", self.sp_x)
-        f.addRow("Y", self.sp_y)
-        f.addRow("Scale", self.sp_scale)
+        f.addRow("X", stepper(self.sp_x))
+        f.addRow("Y", stepper(self.sp_y))
+        f.addRow("Scale", stepper(self.sp_scale))
         row = QHBoxLayout(); row.addWidget(self.sl_opacity, 1); row.addWidget(self.lbl_opacity)
         f.addRow("Opacity", row)
         v.addWidget(g)
@@ -153,9 +302,9 @@ class SettingsWindow(QWidget):
         self.sp_gap = QSpinBox(); self.sp_gap.setRange(0, 100); self.sp_gap.setValue(self.cfg["gap"])
         for sp, key in ((self.sp_cw, "cell_w"), (self.sp_ch, "cell_h"), (self.sp_gap, "gap")):
             sp.valueChanged.connect(lambda val, k=key: self._set(k, val))
-        f2.addRow("Pad width", self.sp_cw)
-        f2.addRow("Pad height", self.sp_ch)
-        f2.addRow("Gap", self.sp_gap)
+        f2.addRow("Pad width", stepper(self.sp_cw))
+        f2.addRow("Pad height", stepper(self.sp_ch))
+        f2.addRow("Gap", stepper(self.sp_gap))
         v.addWidget(g2)
 
         g3 = QGroupBox("Hotkeys (always with Ctrl+Alt)")
@@ -221,7 +370,7 @@ class SettingsWindow(QWidget):
             sp = QSpinBox(); sp.setRange(0, 40); sp.setValue(j.get(name, 0))
             sp.valueChanged.connect(lambda val, n=name: self._set_joy(n, val))
             grid.addWidget(QLabel(text), 2, i * 2)
-            grid.addWidget(sp, 2, i * 2 + 1)
+            grid.addWidget(stepper(sp), 2, i * 2 + 1)
         v.addWidget(g)
 
         self._fill_table()
@@ -243,7 +392,7 @@ class SettingsWindow(QWidget):
         self.chk_bold = QCheckBox("Bold"); self.chk_bold.setChecked(bool(fnt["bold"]))
         self.chk_bold.toggled.connect(lambda on: self._set_font("bold", on))
         ff.addRow("Font", self.font_combo)
-        ff.addRow("Size", self.sp_font)
+        ff.addRow("Size", stepper(self.sp_font))
         ff.addRow("", self.chk_bold)
         v.addWidget(gf)
 
@@ -310,7 +459,10 @@ class SettingsWindow(QWidget):
         self.sp_x.setValue(self.cfg["x"])
         self.sp_y.setValue(self.cfg["y"])
         self.sp_scale.setValue(self.cfg.get("scale", 1.0))
+        for name, le in self.joy_edits.items():
+            le.setText(self.cfg["joystick"].get(name, ""))
         self._loading = False
+        self._fill_table()
         self._schedule_save()
 
     # keys table
