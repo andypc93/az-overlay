@@ -3,8 +3,9 @@
 from copy import deepcopy
 
 import pytest
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QColor, QPalette
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
 import overlay
@@ -160,3 +161,26 @@ def test_loading_layout_keeps_app_theme(editor, monkeypatch):
     assert editor.cfg["x"] == 987
     assert editor.cfg["theme"] == "light"
     assert editor.theme_combo.currentData() == "light"
+
+
+def test_switch_supports_keyboard_and_label_click(editor):
+    editor.nav.setCurrentRow(2)
+    editor.show()
+    switch = editor.chk_bold
+    original = switch.isChecked()
+    switch.setFocus()
+    QTest.keyClick(switch, Qt.Key.Key_Space)
+    assert switch.isChecked() != original
+    assert editor.cfg["font"]["bold"] == switch.isChecked()
+    QTest.mouseClick(switch, Qt.MouseButton.LeftButton, pos=switch.rect().center())
+    assert switch.isChecked() == original
+    assert editor.cfg["font"]["bold"] == original
+
+
+def test_visibility_switch_syncs_when_signals_are_blocked(editor):
+    editor.chk_visible.blockSignals(True)
+    editor.chk_visible.setChecked(True)
+    assert editor.chk_visible.position == 1.0
+    editor.chk_visible.setChecked(False)
+    assert editor.chk_visible.position == 0.0
+    editor.chk_visible.blockSignals(False)

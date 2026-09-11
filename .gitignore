@@ -4,3 +4,10 @@ __pycache__/
 build/
 dist/
 *.spec
+
+# Test reports
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+junit.xml

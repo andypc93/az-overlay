@@ -35,7 +35,7 @@ def test_unknown_label_raises():
 
 
 def test_config_labels_are_all_resolvable():
-    with open(os.path.join(os.path.dirname(__file__), "config.json"), encoding="utf-8") as f:
+    with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json"), encoding="utf-8") as f:
         cfg = json.load(f)
     for k in cfg["keys"]:
         overlay.pad_inputs(k)
