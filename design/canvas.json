@@ -9,34 +9,10 @@
       "h": 860
     },
     {
-      "file": "Keys.dc.html",
-      "title": "Settings \u00b7 Keys",
-      "x": 1140,
-      "y": 0,
-      "w": 1040,
-      "h": 860
-    },
-    {
       "file": "Appearance.dc.html",
       "title": "Settings \u00b7 Appearance",
-      "x": 2280,
-      "y": 0,
-      "w": 1040,
-      "h": 860
-    },
-    {
-      "file": "About.dc.html",
-      "title": "Settings \u00b7 About",
-      "x": 0,
-      "y": 1000,
-      "w": 1040,
-      "h": 860
-    },
-    {
-      "file": "Help.dc.html",
-      "title": "Settings \u00b7 Help",
       "x": 1140,
-      "y": 1000,
+      "y": 0,
       "w": 1040,
       "h": 860
     },
@@ -44,9 +20,33 @@
       "file": "Overlay.dc.html",
       "title": "Overlay \u00b7 Cyborg 2 layout",
       "x": 2280,
-      "y": 1000,
+      "y": 0,
       "w": 900,
       "h": 760
+    },
+    {
+      "file": "Keys.dc.html",
+      "title": "Settings \u00b7 Keys (full length)",
+      "x": 0,
+      "y": 1000,
+      "w": 1040,
+      "h": 1100
+    },
+    {
+      "file": "Help.dc.html",
+      "title": "Settings \u00b7 Help (full length)",
+      "x": 1140,
+      "y": 1000,
+      "w": 1040,
+      "h": 960
+    },
+    {
+      "file": "About.dc.html",
+      "title": "Settings \u00b7 About",
+      "x": 2280,
+      "y": 1000,
+      "w": 1040,
+      "h": 860
     }
   ],
   "launch": {

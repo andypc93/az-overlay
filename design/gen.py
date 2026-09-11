@@ -17,6 +17,7 @@ C = dict(idle_fill="#1e1e1e", idle_outline="#c9d400", pressed_fill="#c9d400",
 FONT = "'Segoe UI', system-ui, -apple-system, sans-serif"
 PT = 96 / 72  # Qt pt -> css px
 W, H = 1040, 860
+KEYS_H, HELP_H = 1100, 960  # these pages scroll at the default 860 height; show them at full length
 
 BASE_CSS = f"""
     body {{ margin: 0; background: {T['bg']}; color: {T['text']}; font-family: {FONT}; font-size: {10*PT:.2f}px; }}
@@ -45,7 +46,7 @@ def icon(name):
     gid = f"g{name}"
     return (f'<svg width="28" height="28" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="flex: 0 0 auto;">'
             f'<defs><linearGradient id="{gid}" x1="0" y1="0" x2="1" y2="1">'
-            f'<stop offset="0" stop-color="#c4ff33"></stop><stop offset="1" stop-color="{T["accent"]}"></stop></linearGradient></defs>'
+            f'<stop offset="0" stop-color="{T["accent"]}"></stop><stop offset="1" stop-color="{T["accent"]}"></stop></linearGradient></defs>'
             f'<rect x="0" y="0" width="32" height="32" rx="8" fill="url(#{gid})"></rect>{g}</svg>')
 
 
@@ -54,11 +55,12 @@ def arrow():
             f'<polygon points="4,7 16,7 10,13" fill="{T["text"]}"></polygon></svg>')
 
 
-def combo(text, width=None, flex=None):
+def combo(text, width=None, flex=None, placeholder=False):
     size = f"width: {width}px;" if width else ""
     grow = f"flex: {flex};" if flex else ""
+    color = T["muted"] if placeholder else T["text"]
     return (f'<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; {size} {grow} '
-            f'background: {T["field"]}; border: 1px solid transparent; border-radius: 9px; padding: 7px 10px 7px 10px; min-height: 36px;">'
+            f'background: {T["field"]}; border: 1px solid transparent; border-radius: 9px; padding: 7px 10px 7px 10px; min-height: 36px; color: {color};">'
             f'<span>{text}</span>{arrow()}</div>')
 
 
@@ -151,7 +153,7 @@ def header():
             f'<div style="display: flex; align-items: center; gap: 10px;">{muted("Every move. On display.", wrap=False)}'
             f'<div style="flex: 1;"></div><span>Theme</span>{combo("Dark", width=100)}</div>'
             f'<div style="display: flex; align-items: center; gap: 10px;">{muted("Layout", wrap=False)}'
-            f'{combo("Unsaved layout", flex=1)}{button("Save layout")}{button("More ▾", kind="quiet")}'
+            f'{combo("Choose a saved layout", flex=1, placeholder=True)}{button("Save layout")}{button("More", kind="quiet")}'
             f'<div style="width: 8px;"></div>{button("+ New layout", kind="primary")}</div></div>')
 
 
@@ -180,8 +182,8 @@ def page(title, description, *cards):
             f'{muted(description)}<div style="height: 4px;"></div>' + "".join(cards) + '</div>')
 
 
-def window(active, body):
-    return (f'<div style="width: {W}px; height: {H}px; display: flex; flex-direction: column; background: {T["bg"]}; overflow: hidden;">'
+def window(active, body, height=H):
+    return (f'<div style="width: {W}px; height: {height}px; display: flex; flex-direction: column; background: {T["bg"]}; overflow: hidden;">'
             f'{header()}<div style="flex: 1; display: flex; min-height: 0;">{sidebar(active)}{body}</div>{footer()}</div>')
 
 
@@ -240,7 +242,7 @@ def keys_page():
         table,
         switch("Edit position &amp; size"),
     )
-    return window("Keys", page("Keys &amp; inputs", "Choose a pad. Record an input. Make it yours.", c1, disclosure("Sticks &amp; d-pads")))
+    return window("Keys", page("Keys &amp; inputs", "Choose a pad. Record an input. Make it yours.", c1, disclosure("Sticks &amp; d-pads")), height=KEYS_H)
 
 
 def pad_preview():
@@ -324,7 +326,7 @@ def help_page():
     guide = card(section("Quick start"), steps)
     tip = card(section("Can’t see your overlay?"),
                muted("Turn on Overlay visible below, and use windowed or borderless mode in your game."))
-    return window("Help", page("Help", "Get set up, find your way, or send an idea.", contact, guide, tip))
+    return window("Help", page("Help", "Get set up, find your way, or send an idea.", contact, guide, tip), height=HELP_H)
 
 
 # ---- overlay --------------------------------------------------------------
@@ -334,7 +336,8 @@ def overlay_page():
     s = 0.75
     cw, ch, gap = cfg["cell_w"] * s, cfg["cell_h"] * s, cfg["gap"] * s
     radius = min(10 * s, cw * 0.2, ch * 0.2)
-    font_px = cfg["font"]["size"] * s * PT
+    font_px = int(cfg["font"]["size"] * s) * PT
+    stick_px = int(int(cfg["font"]["size"] * s) * 0.75) * PT
     pressed = {"Space", "W"}
 
     def cell(col, row, w=1, h=1):
@@ -357,7 +360,7 @@ def overlay_page():
         if st.get("axes"):
             kr = rad * 0.42
             svg += f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{kr:.1f}" fill="{C["idle_outline"]}" stroke="{C["idle_outline"]}" stroke-width="1.2"></circle>'
-        svg += (f'<text x="{x + 6:.1f}" y="{y + 4 + font_px * 0.75:.1f}" font-family="{FONT}" font-size="{font_px * 0.75:.1f}" font-weight="700" fill="{C["idle_text"]}">{st["label"]}</text>')
+        svg += (f'<text x="{x + w - 6:.1f}" y="{y + h - 4 - stick_px * 0.25:.1f}" text-anchor="end" font-family="{FONT}" font-size="{stick_px:.1f}" font-weight="700" fill="{C["idle_text"]}">{st["label"]}</text>')
         dot_r = rad * 0.30
         for name, dx, dy in (("up", 0, -1), ("down", 0, 1), ("left", -1, 0), ("right", 1, 0)):
             label = st.get(name)
@@ -366,6 +369,9 @@ def overlay_page():
             px, py = cx + dx * rad * 0.62, cy + dy * rad * 0.62
             lit = label in pressed
             fill = C["pressed_fill"] if lit else C["idle_fill"]
+            if lit:
+                svg += (f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{dot_r:.1f}" fill="none" stroke="{C["pressed_outline"]}" stroke-opacity="0.18" stroke-width="12"></circle>'
+                        f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{dot_r:.1f}" fill="none" stroke="{C["pressed_outline"]}" stroke-opacity="0.09" stroke-width="6"></circle>')
             svg += f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{dot_r:.1f}" fill="{fill}" stroke="{C["idle_outline"]}" stroke-width="{2.2 if lit else 1.2}"></circle>'
             tx, ty = cx + dx * rad * 1.4, cy + dy * rad * 1.4
             tcol = C["pressed_outline"] if lit else C["idle_text"]
@@ -418,11 +424,11 @@ GX = W + 100
 canvas = {
     "artboards": [
         {"file": "Main.dc.html", "title": "Settings · Layout", "x": 0, "y": 0, "w": W, "h": H},
-        {"file": "Keys.dc.html", "title": "Settings · Keys", "x": GX, "y": 0, "w": W, "h": H},
-        {"file": "Appearance.dc.html", "title": "Settings · Appearance", "x": 2 * GX, "y": 0, "w": W, "h": H},
-        {"file": "About.dc.html", "title": "Settings · About", "x": 0, "y": H + 140, "w": W, "h": H},
-        {"file": "Help.dc.html", "title": "Settings · Help", "x": GX, "y": H + 140, "w": W, "h": H},
-        {"file": "Overlay.dc.html", "title": "Overlay · Cyborg 2 layout", "x": 2 * GX, "y": H + 140, "w": ow, "h": oh},
+        {"file": "Appearance.dc.html", "title": "Settings · Appearance", "x": GX, "y": 0, "w": W, "h": H},
+        {"file": "Overlay.dc.html", "title": "Overlay · Cyborg 2 layout", "x": 2 * GX, "y": 0, "w": ow, "h": oh},
+        {"file": "Keys.dc.html", "title": "Settings · Keys (full length)", "x": 0, "y": H + 140, "w": W, "h": KEYS_H},
+        {"file": "Help.dc.html", "title": "Settings · Help (full length)", "x": GX, "y": H + 140, "w": W, "h": HELP_H},
+        {"file": "About.dc.html", "title": "Settings · About", "x": 2 * GX, "y": H + 140, "w": W, "h": H},
     ],
     "launch": {"view": "canvas"},
 }
