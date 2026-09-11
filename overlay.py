@@ -22,7 +22,7 @@ import time
 
 from pynput import keyboard, mouse
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QAction, QBrush, QColor, QFont, QFontMetricsF, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
 
 from gamepad import Gamepad, is_gamepad_input
@@ -329,6 +329,39 @@ def delete_profile(name):
         pass
 
 
+KEY_TEXT_FLAGS = Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap
+
+
+def key_text_rect(rect, shape="rect"):
+    """Keep labels inside the border, including on circular buttons."""
+    area = rect.adjusted(3, 2, -3, -2)
+    if shape == "circle":
+        inset_x = area.width() * (1 - 2 ** -0.5) / 2
+        inset_y = area.height() * (1 - 2 ** -0.5) / 2
+        area.adjust(inset_x, inset_y, -inset_x, -inset_y)
+    return area
+
+
+def fit_key_font(text, requested_font, rect, device=None):
+    """Cap this label's font independently, using the same wrapping as drawing."""
+    font = QFont(requested_font)
+    if not text:
+        return font
+    low, high = 1, max(1, int(requested_font.pointSizeF()))
+    best = 1
+    while low <= high:
+        size = (low + high) // 2
+        font.setPointSize(size)
+        bounds = QFontMetricsF(font, device).boundingRect(rect, KEY_TEXT_FLAGS, text)
+        if bounds.width() <= rect.width() and bounds.height() <= rect.height():
+            best = size
+            low = size + 1
+        else:
+            high = size - 1
+    font.setPointSize(best)
+    return font
+
+
 class Pad:
     """One drawable element: a key, a controller button, or a stick direction."""
 
@@ -431,6 +464,10 @@ class Overlay(QWidget):
         self.build()
         for p in self.pads:
             p.level = old.get(p.source, 0.0)
+            if p.shape != "dot":
+                p.text_rect = key_text_rect(p.rect, p.shape)
+                p.font = fit_key_font(p.label, self.font, p.text_rect, self)
+                p.capture_font = fit_key_font("press\na key", self.font, p.text_rect, self)
 
         self.hotkeys = {name: vks_for_label(cfg["hotkeys"].get(name, ""))
                         for name in ("toggle", "quit", "settings")}
@@ -535,7 +572,8 @@ class Overlay(QWidget):
                 self._draw_shape(p, pad)
                 if pad.shape != "dot":
                     p.setPen(hot)
-                    p.drawText(pad.rect, Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, "press\na key")
+                    p.setFont(pad.capture_font)
+                    p.drawText(pad.text_rect, KEY_TEXT_FLAGS, "press\na key")
                 continue
             if not pad.label and not pad.bound():
                 if self.edit_mode:  # show unassigned pads faintly so they can be clicked and bound
@@ -563,14 +601,15 @@ class Overlay(QWidget):
             p.setPen(QPen(outline, 1.2 + t))
             self._draw_shape(p, pad)
             if pad.shape == "dot":
+                p.setFont(self.font)
                 p.setPen(self.mix(c["idle_text"], c["pressed_outline"], t))
                 fm = p.fontMetrics()
                 tw = fm.horizontalAdvance(pad.label)
                 p.drawText(QPointF(pad.text_pos.x() - tw / 2, pad.text_pos.y() + fm.ascent() / 2 - 1), pad.label)
             else:
                 p.setPen(text)
-                p.drawText(pad.rect.adjusted(2, 1, -2, -1),
-                           Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, pad.label)
+                p.setFont(pad.font)
+                p.drawText(pad.text_rect, KEY_TEXT_FLAGS, pad.label)
 
         if self.edit_mode:
             frame = QColor(c["pressed_outline"])

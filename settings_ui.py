@@ -6,7 +6,7 @@ import tempfile
 from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, Property
 from PySide6.QtGui import QBrush, QColor, QFont, QIcon, QLinearGradient, QPainter, QPalette, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
-    QAbstractItemView, QAbstractSpinBox, QCheckBox, QColorDialog, QComboBox, QDialog,
+    QAbstractItemView, QAbstractSpinBox, QBoxLayout, QCheckBox, QColorDialog, QComboBox, QDialog,
     QDialogButtonBox, QDoubleSpinBox, QFontComboBox, QFormLayout, QFrame, QGridLayout,
     QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMessageBox, QMenu, QPushButton, QScrollArea, QSlider, QSpinBox, QStackedWidget, QTableWidget,
@@ -16,28 +16,29 @@ from PySide6.QtWidgets import (
 import templates
 from gamepad import is_gamepad_input
 from overlay import (APP_NAME, DEFAULT_COLORS, GAMEPAD_LABELS, PROFILE_KEYS, delete_profile,
+                     KEY_TEXT_FLAGS, fit_key_font, key_text_rect,
                      label_for_token, list_profiles, load_profile, migrate, pad_inputs, parse_input,
                      save_config, save_profile, vks_for_label)
 
 # Theme colors belong to the editor; overlay colors remain part of each layout.
 THEMES = {
     "dark": {
-        "bg": "#141416", "card": "#232326", "field": "#303034",
-        "line": "#38383d", "text": "#f5f5f7", "muted": "#a1a1aa",
-        "accent": "#0a84ff", "accent_text": "#ffffff", "accent_hover": "#339aff",
-        "hover": "#3a3a40", "pressed": "#45454c", "strong_line": "#686870",
-        "disabled": "#73737d", "badge_bg": "#18372a", "badge_line": "#18372a",
-        "badge_text": "#6cdd97", "selection": "#203d61", "sidebar": "#1c1c1f",
-        "preview": "#1b1b1e", "preview_end": "#292b33",
+        "bg": "#000000", "card": "#161616", "field": "#242424",
+        "line": "#333333", "text": "#f5f5f7", "muted": "#a1a1a6",
+        "accent": "#b6ff00", "accent_text": "#101600", "accent_hover": "#ceff59",
+        "hover": "#303030", "pressed": "#3c3c3c", "strong_line": "#6a6a6a",
+        "disabled": "#757575", "badge_bg": "#253314", "badge_line": "#253314",
+        "badge_text": "#b6ff00", "selection": "#253314", "sidebar": "#0b0b0b",
+        "preview": "#121212", "preview_end": "#1f1f1f",
     },
     "light": {
         "bg": "#f2f2f7", "card": "#ffffff", "field": "#f0f0f5",
         "line": "#e3e3eb", "text": "#1c1c1e", "muted": "#6c6c76",
-        "accent": "#007aff", "accent_text": "#ffffff", "accent_hover": "#0068db",
+        "accent": "#416800", "accent_text": "#ffffff", "accent_hover": "#325100",
         "hover": "#e8e8f0", "pressed": "#dddde7", "strong_line": "#aaaab5",
         "disabled": "#90909a", "badge_bg": "#e8f7ed", "badge_line": "#e8f7ed",
-        "badge_text": "#21834b", "selection": "#e4efff", "sidebar": "#eaeaF1",
-        "preview": "#f4f6fc", "preview_end": "#e9eef9",
+        "badge_text": "#416800", "selection": "#e6f3cf", "sidebar": "#eaeaF1",
+        "preview": "#f5f8f0", "preview_end": "#eaf0df",
     },
 }
 
@@ -92,7 +93,6 @@ QWidget {{ background: {t["bg"]}; color: {t["text"]}; font-family: 'Segoe UI'; f
 QLabel, QCheckBox, QWidget#inline {{ background: transparent; }}
 QLabel#muted {{ color: {t["muted"]}; }}
 QLabel#section {{ color: {t["muted"]}; font-size: 8pt; font-weight: 600; letter-spacing: 1.2px; }}
-QLabel#brand {{ font-size: 17pt; font-weight: 700; letter-spacing: -0.5px; }}
 QLabel#pageTitle {{ font-size: 27pt; font-weight: 700; letter-spacing: -1px; }}
 QLabel#badge {{ color: {t["badge_text"]}; background: {t["badge_bg"]}; border-radius: 11px; padding: 5px 11px; font-size: 8pt; font-weight: 600; }}
 QLabel#value {{ color: {t["accent"]}; background: {t["selection"]}; border-radius: 8px; padding: 4px 8px; font-weight: 600; }}
@@ -104,7 +104,7 @@ QWidget#sidebar {{ background: {t["sidebar"]}; border-right: 1px solid {t["line"
 QListWidget#nav {{ background: transparent; border: none; outline: 0; }}
 QListWidget#nav::item {{ padding: 10px; margin: 3px 0; border-radius: 10px; color: {t["muted"]}; }}
 QListWidget#nav::item:hover {{ background: {t["hover"]}; color: {t["text"]}; }}
-QListWidget#nav::item:selected {{ background: {t["card"]}; color: {t["text"]}; font-weight: 600; }}
+QListWidget#nav::item:selected {{ background: {t["selection"]}; color: {t["accent"]}; font-weight: 600; }}
 QScrollArea {{ border: none; }}
 QPushButton {{ background: {t["field"]}; border: 1px solid transparent; border-radius: 10px; padding: 8px 15px; font-weight: 600; }}
 QPushButton:hover {{ background: {t["hover"]}; }}
@@ -165,14 +165,14 @@ def navigation_icon(name):
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    colors = {"Layout": "#007aff", "Keys": "#af52de", "Appearance": "#ff9500", "brand": "#007aff"}
+    accent = QColor(THEMES["dark"]["accent"])
     p.setPen(Qt.PenStyle.NoPen)
     gradient = QLinearGradient(0, 0, 32, 32)
-    gradient.setColorAt(0, QColor(colors[name]).lighter(115))
-    gradient.setColorAt(1, QColor(colors[name]))
+    gradient.setColorAt(0, accent.lighter(115))
+    gradient.setColorAt(1, accent)
     p.setBrush(gradient)
     p.drawRoundedRect(QRectF(0, 0, 32, 32), 8, 8)
-    p.setPen(QPen(QColor("#ffffff"), 1.6))
+    p.setPen(QPen(QColor(THEMES["dark"]["accent_text"]), 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     if name == "Layout":
         p.drawRoundedRect(QRectF(7, 7, 18, 18), 3, 3)
@@ -186,11 +186,11 @@ def navigation_icon(name):
     elif name == "Appearance":
         for x, y in ((12, 12), (20, 12), (16, 20)):
             p.drawEllipse(QPointF(x, y), 5, 5)
-    else:
-        p.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-        p.drawText(QRectF(0, 0, 32, 32), Qt.AlignmentFlag.AlignCenter, "AZ")
     p.end()
-    return QIcon(pm)
+    icon = QIcon(pm)
+    icon.addPixmap(pm, QIcon.Mode.Selected)
+    icon.addPixmap(pm, QIcon.Mode.Active)
+    return icon
 
 
 class Switch(QCheckBox):
@@ -214,6 +214,12 @@ class Switch(QCheckBox):
 
     position = Property(float, _get_position, _set_position)
 
+    def setChecked(self, checked):
+        super().setChecked(checked)
+        if self.signalsBlocked():
+            self.animation.stop()
+            self.position = float(checked)
+
     def _animate(self, checked):
         self.animation.stop()
         if not self.isVisible():
@@ -235,9 +241,9 @@ class Switch(QCheckBox):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        dark = self.palette().color(QPalette.ColorRole.Window).lightness() < 128
-        off = QColor("#48484e" if dark else "#dddde3")
-        on = QColor("#30d158" if dark else "#34c759")
+        colors = theme_colors(getattr(self.window(), "cfg", {}))
+        off = QColor(colors["strong_line"])
+        on = QColor(colors["accent"])
         t = self._position
         track_color = QColor(*(round(a + (b - a) * t) for a, b in zip(off.getRgb()[:3], on.getRgb()[:3])))
         if not self.isEnabled():
@@ -246,7 +252,7 @@ class Switch(QCheckBox):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(track_color)
         p.drawRoundedRect(track, 12, 12)
-        p.setBrush(QColor("#ffffff"))
+        p.setBrush(QColor(colors["accent_text"]))
         p.drawEllipse(QRectF(track.x() + 2 + 18 * t, track.y() + 2, 20, 20))
         if self.hasFocus():
             p.setPen(QPen(self.palette().color(QPalette.ColorRole.Highlight), 1.5))
@@ -425,9 +431,10 @@ class PadPreview(QWidget):
             p.setBrush(QBrush(c[f"{state}_fill"]))
             p.setPen(QPen(c[f"{state}_outline"], 1.2 if state == "idle" else 2.2))
             p.drawRoundedRect(rect, r, r)
-            p.setFont(font)
+            text_rect = key_text_rect(rect)
+            p.setFont(fit_key_font("Space", font, text_rect, self))
             p.setPen(c[f"{state}_text"])
-            p.drawText(rect, Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, "Space")
+            p.drawText(text_rect, KEY_TEXT_FLAGS, "Space")
             p.setFont(QFont("Segoe UI", 8))
             p.setPen(QColor(theme_colors(self.cfg)["muted"]))
             p.drawText(QRectF(x, y0 + h + 4, w, 16), Qt.AlignmentFlag.AlignCenter, state)
@@ -540,7 +547,6 @@ class SettingsWindow(QWidget):
         sidebar_layout.setSpacing(12)
         sidebar_layout.addWidget(section("Workspace"))
         sidebar_layout.addWidget(self.nav, 1)
-        sidebar_layout.addWidget(muted("Your setup,\njust the way you like it."))
         body.addWidget(sidebar)
         body.addWidget(self.stack, 1)
         root.addLayout(body, 1)
@@ -560,22 +566,11 @@ class SettingsWindow(QWidget):
         header.setContentsMargins(26, 20, 26, 18)
         header.setSpacing(18)
         title = QHBoxLayout()
-        wordmark = QVBoxLayout()
-        wordmark.setSpacing(2)
         h = QHBoxLayout()
         h.setSpacing(10)
-        brand = QLabel(APP_NAME)
-        brand.setObjectName("brand")
-        wordmark.addWidget(brand)
-        tagline = muted("Your inputs. Your layout.")
+        tagline = muted("Every move. On display.")
         tagline.setWordWrap(False)
-        wordmark.addWidget(tagline)
-        app_icon = QLabel()
-        app_icon.setPixmap(navigation_icon("brand").pixmap(QSize(44, 44)))
-        app_icon.setFixedSize(44, 44)
-        title.addWidget(app_icon)
-        title.addSpacing(4)
-        title.addLayout(wordmark)
+        title.addWidget(tagline)
         title.addStretch(1)
         theme_label = QLabel("Theme")
         self.theme_combo = QComboBox()
@@ -589,10 +584,6 @@ class SettingsWindow(QWidget):
         self.theme_combo.currentIndexChanged.connect(self._theme_changed)
         title.addWidget(theme_label)
         title.addWidget(self.theme_combo)
-        title.addSpacing(12)
-        badge = QLabel("?  Live editor")
-        badge.setObjectName("badge")
-        title.addWidget(badge, 0, Qt.AlignmentFlag.AlignVCenter)
         header.addLayout(title)
         header.addLayout(h)
         b_tpl = QPushButton("+ New layout")
@@ -627,8 +618,7 @@ class SettingsWindow(QWidget):
         f.setObjectName("footer")
         h = QHBoxLayout(f)
         h.setContentsMargins(20, 10, 20, 10)
-        self.status = muted("Working settings autosaved")
-        h.addWidget(self.status, 1)
+        h.addStretch(1)
         self.chk_visible = Switch("Overlay visible")
         self.chk_visible.setChecked(self.overlay.isVisible())
         self.chk_visible.toggled.connect(self.overlay.setVisible)
@@ -663,6 +653,17 @@ class SettingsWindow(QWidget):
         self.stack.addWidget(self._layout_page())
         self.stack.addWidget(self._keys_page())
         self.stack.addWidget(self._appearance_page())
+        self._adapt_appearance_columns()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "appearance_columns"):
+            self._adapt_appearance_columns()
+
+    def _adapt_appearance_columns(self):
+        self.appearance_columns.setDirection(
+            QBoxLayout.Direction.LeftToRight if self.width() >= 1000
+            else QBoxLayout.Direction.TopToBottom)
 
     def _page_changed(self, index):
         self.stack.setCurrentIndex(index)
@@ -777,7 +778,7 @@ class SettingsWindow(QWidget):
         self.table = QTableWidget(0, 6)
         search_row = QHBoxLayout()
         self.key_search = QLineEdit()
-        self.key_search.setPlaceholderText("Find a pad by label or input…")
+        self.key_search.setPlaceholderText("Search by label or input")
         self.key_search.setClearButtonEnabled(True)
         self.key_search.setAccessibleName("Find a pad")
         self.key_search.textChanged.connect(self._filter_keys)
@@ -882,6 +883,7 @@ class SettingsWindow(QWidget):
         f = form()
         fnt = self.cfg["font"]
         self.font_combo = QFontComboBox()
+        self.font_combo.setMinimumWidth(130)
         self.font_combo.setCurrentFont(QFont(fnt["family"]))
         self.font_combo.currentFontChanged.connect(lambda ft: self._set_font("family", ft.family()))
         self.sp_font = QSpinBox(); self.sp_font.setRange(4, 72); self.sp_font.setValue(int(fnt["size"]))
@@ -890,14 +892,17 @@ class SettingsWindow(QWidget):
         self.chk_bold = Switch("Bold"); self.chk_bold.setChecked(bool(fnt["bold"]))
         self.chk_bold.toggled.connect(lambda on: self._set_font("bold", on))
         f.addRow("Font", self.font_combo)
-        f.addRow("Size", stepper(self.sp_font))
+        font_stepper = stepper(self.sp_font)
+        font_stepper.setMaximumWidth(208)
+        f.addRow("Size", font_stepper)
         f.addRow("Weight", self.chk_bold)
         l1.addLayout(f)
+        l1.addStretch(1)
 
         c2, l2 = card()
         l2.addWidget(section("Colors"))
         grid = QGridLayout()
-        grid.setHorizontalSpacing(24)
+        grid.setHorizontalSpacing(16)
         grid.setVerticalSpacing(8)
         grid.addWidget(muted("Idle"), 0, 1)
         grid.addWidget(muted("Pressed"), 0, 2)
@@ -914,7 +919,14 @@ class SettingsWindow(QWidget):
         reset.setObjectName("quiet")
         reset.clicked.connect(self._reset_colors)
         l2.addWidget(reset, 0, Qt.AlignmentFlag.AlignLeft)
-        return self._page("Appearance", "Make it yours. Preview your font and colors as you edit.", c0, c1, c2)
+        controls = QWidget()
+        controls.setObjectName("inline")
+        self.appearance_columns = QBoxLayout(QBoxLayout.Direction.TopToBottom, controls)
+        self.appearance_columns.setContentsMargins(0, 0, 0, 0)
+        self.appearance_columns.setSpacing(16)
+        self.appearance_columns.addWidget(c1, 1)
+        self.appearance_columns.addWidget(c2, 1)
+        return self._page("Appearance", "Make it yours. Preview your font and colors as you edit.", c0, controls)
 
     # ---- behaviour ----------------------------------------------------
     def _theme_changed(self):
@@ -977,7 +989,7 @@ class SettingsWindow(QWidget):
             vks_for_label(le.text())
         except ValueError:
             le.setText(self.cfg["hotkeys"].get(name, ""))
-            self._flash("Unknown key name")
+            self._show_error("Unknown key name")
             return
         self.cfg["hotkeys"][name] = le.text().strip()
         self._apply()
@@ -1107,7 +1119,7 @@ class SettingsWindow(QWidget):
         self._loading = True
         item.setText(text)
         self._loading = False
-        self._flash(msg)
+        self._show_error(msg)
 
     def _add_pad(self):
         self.key_search.clear()
@@ -1133,7 +1145,7 @@ class SettingsWindow(QWidget):
     def _toggle_capture(self, on):
         if on and self.table.currentRow() < 0:
             self.btn_capture.setChecked(False)
-            self._flash("Select a pad row first")
+            self._show_error("Select a pad row first")
             return
         self.overlay.capturing = on
         self.btn_capture.setText("Cancel recording" if on else "Record input")
@@ -1147,7 +1159,7 @@ class SettingsWindow(QWidget):
         r = self.table.currentRow()
         name = token if is_gamepad_input(token) else label_for_token(token)
         if name is None or r < 0:
-            self._flash(f"Unknown key ({token})")
+            self._show_error(f"Unknown key ({token})")
             return
         k = self.cfg["keys"][r]
         old_input = k.get("input", k.get("label", ""))
@@ -1157,7 +1169,6 @@ class SettingsWindow(QWidget):
             k["label"] = GAMEPAD_LABELS.get(name, name)
         self._fill_table()
         self.table.selectRow(r)
-        self._flash(f"Pad input set to {name}")
         self._apply()
 
     STICK_COLS = ("label", "up", "down", "left", "right", "col", "row", "w", "h")
@@ -1251,7 +1262,7 @@ class SettingsWindow(QWidget):
         try:
             save_profile(name, prof)
         except (OSError, ValueError) as e:
-            self._flash(f"Could not save: {e}")
+            self._show_error(f"Could not save: {e}")
             return
         for k in PROFILE_KEYS:
             if k in prof:
@@ -1260,7 +1271,6 @@ class SettingsWindow(QWidget):
         self._refresh_profiles()
         self._rebuild_tabs()
         self._apply()
-        self._flash(f"Created layout '{name}'")
 
     def _refresh_profiles(self):
         self.profile_combo.blockSignals(True)
@@ -1283,7 +1293,7 @@ class SettingsWindow(QWidget):
         try:
             data = load_profile(name)
         except (OSError, ValueError) as e:
-            self._flash(f"Could not load: {e}")
+            self._show_error(f"Could not load: {e}")
             return
         for k in PROFILE_KEYS:
             if k in data:
@@ -1291,7 +1301,6 @@ class SettingsWindow(QWidget):
         self.cfg["profile"] = name
         self._rebuild_tabs()
         self._apply()
-        self._flash(f"Loaded layout '{name}'")
 
     def _profile_save(self):
         if self.profile_combo.currentIndex() == 0:
@@ -1301,7 +1310,6 @@ class SettingsWindow(QWidget):
         save_profile(name, self.cfg)
         self.cfg["profile"] = name
         self._schedule_save()
-        self._flash(f"Saved layout '{name}'")
 
     def _profile_save_as(self):
         name, ok = QInputDialog.getText(self, "Save layout", "Layout name:",
@@ -1312,12 +1320,11 @@ class SettingsWindow(QWidget):
         try:
             save_profile(name, self.cfg)
         except (OSError, ValueError) as e:
-            self._flash(f"Could not save: {e}")
+            self._show_error(f"Could not save: {e}")
             return
         self.cfg["profile"] = name
         self._refresh_profiles()
         self._schedule_save()
-        self._flash(f"Saved layout '{name}'")
 
     def _profile_delete(self):
         if self.profile_combo.currentIndex() == 0:
@@ -1330,21 +1337,16 @@ class SettingsWindow(QWidget):
             self.cfg["profile"] = ""
         self._refresh_profiles()
         self._schedule_save()
-        self._flash(f"Deleted layout '{name}'")
 
     # ---- save ---------------------------------------------------------
     def _schedule_save(self):
-        self.status.setText("Applying changes…")
         self.save_timer.start()
 
     def _save_now(self):
         try:
             save_config(self.cfg)
-            self._flash("Settings saved")
         except OSError as e:
-            self._flash(f"Save failed: {e}")
+            self._show_error(f"Save failed: {e}")
 
-    def _flash(self, text):
-        self.status.setText(text)
-        QTimer.singleShot(2500, lambda: self.status.setText("Working settings autosaved")
-                          if self.status.text() == text else None)
+    def _show_error(self, text):
+        QMessageBox.warning(self, "Settings", text)

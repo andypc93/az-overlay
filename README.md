@@ -80,6 +80,8 @@ pad. Enable **Edit position & size** to reveal geometry columns, or expand
 
 On **Appearance**, adjust the font, size, weight, and colors. The live preview
 shows idle and pressed states, each with its own fill, border, and text color.
+The size you pick is the maximum: long labels shrink automatically so text
+always stays inside its pad, including on round buttons.
 
 Choose **Light** or **Dark** in the **Theme** selector at the top of settings.
 Your choice applies immediately and is remembered across restarts and layout
@@ -136,7 +138,7 @@ your changes.
 | `cell_w`, `cell_h`, `gap` | Base key dimensions and spacing |
 | `keys` | Labels, input bindings, positions, dimensions, and shapes |
 | `sticks` | Direction bindings, analog axes, click input, and geometry |
-| `font` | Family, point size at scale `1.0`, and bold weight |
+| `font` | Family, maximum point size at scale `1.0`, and bold weight |
 | `colors` | Idle and pressed fill, outline, and text colors |
 | `hotkeys` | Final key for each global shortcut |
 | `theme` | Settings window appearance: `dark` (default) or `light` |
