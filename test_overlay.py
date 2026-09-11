@@ -33,3 +33,13 @@ def test_config_labels_are_all_resolvable():
         overlay.vks_for_label(k["label"])
     for d in ("up", "down", "left", "right"):
         assert overlay.vks_for_label(cfg["joystick"][d])
+
+
+def test_label_roundtrip():
+    for label in ("Q", "7", "Alt", "Page Up", "F12", "Space", "Caps Lock"):
+        vk = sorted(overlay.vks_for_label(label))[0]
+        assert overlay.label_for_vk(vk) == label
+
+
+def test_label_case_insensitive():
+    assert overlay.vks_for_label("page up") == overlay.vks_for_label("Page Up")

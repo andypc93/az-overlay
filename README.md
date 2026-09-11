@@ -17,11 +17,24 @@ python overlay.py
 GitHub release. Put a shortcut to it in
 `shell:startup` if you want it at login.
 
-## Hotkeys
+## Settings GUI
+
+A tray icon appears while running. Double-click it (or Ctrl+Alt+S) to open
+Settings. Everything applies live and autosaves to `config.json`:
+
+- **Layout**: X/Y, scale, opacity, pad size. "Move / resize with mouse" lets
+  you drag the overlay and scroll-wheel to resize it.
+- **Keys**: table of pads (label, col, row). Select a row, hit "Capture key",
+  press the Cyborg button: label set. Empty label = pad hidden (fully
+  transparent). Thumbstick keys editable too.
+- **Colors**: fill, border and text for idle and pressed states.
+
+## Hotkeys (always Ctrl+Alt + key, editable)
 
 | Keys         | Action            |
 | ------------ | ----------------- |
 | Ctrl+Alt+O   | Show / hide       |
+| Ctrl+Alt+S   | Open settings     |
 | Ctrl+Alt+Q   | Quit              |
 
 ## Config (`config.json`)
@@ -30,7 +43,7 @@ GitHub release. Put a shortcut to it in
 - `keys`: list of `{label, col, row}`. Label is what the Cyborg sends
   (`Q`, `9`, `Alt`, `Page Up`, `F1`, `Caps Lock`, ...). Empty label = unbound pad.
 - `joystick`: 2x2 cell showing the thumbstick in keyboard mode with its four keys.
-- `colors`, `hotkeys` as named.
+- `colors` (idle_/pressed_ × fill/outline/text), `hotkeys` as named.
 
 Edit the labels to match your Azeron profile. The default layout mirrors the
 software's editor view.
