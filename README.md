@@ -10,7 +10,11 @@ pip install -r requirements.txt
 python overlay.py
 ```
 
-`run.bat` does the same without a console window. Put a shortcut to it in
+`run.bat` does the same without a console window.
+
+**No Python?** Run `build.bat` (needs `pip install pyinstaller`) and use
+`distz-overlay.exe` with `config.json` next to it. Or grab the exe from the
+GitHub release. Put a shortcut to it in
 `shell:startup` if you want it at login.
 
 ## Hotkeys

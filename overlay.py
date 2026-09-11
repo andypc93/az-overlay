@@ -18,7 +18,9 @@ from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QApplication, QWidget
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+# Frozen exe: config.json sits next to the .exe so users can edit it.
+_BASE = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(_BASE, "config.json")
 
 # Windows virtual-key codes for the non-character labels the Cyborg can emit.
 VK_BY_LABEL = {
