@@ -1,7 +1,10 @@
 """Settings window for the overlay. Every edit applies live and autosaves."""
 
-from PySide6.QtCore import QRectF, Qt, QTimer
-from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPalette, QPen
+import os
+import tempfile
+
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
+from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPalette, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QAbstractItemView, QAbstractSpinBox, QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox,
     QFontComboBox, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog,
@@ -39,7 +42,26 @@ def dark_palette():
     return pal
 
 
-STYLE = f"""
+def _arrow_icon():
+    """Qt stylesheets can't draw arrows in a chosen color; ship a tiny PNG instead."""
+    path = os.path.join(tempfile.gettempdir(), "az-overlay-arrow.png")
+    if not os.path.exists(path):
+        pm = QPixmap(20, 20)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(TEXT))
+        p.drawPolygon(QPolygonF([QPointF(4, 7), QPointF(16, 7), QPointF(10, 13)]))
+        p.end()
+        pm.save(path)
+    return path.replace("\\", "/")
+
+
+def style():
+    """Stylesheet, built at runtime (needs a QApplication for the arrow icon)."""
+    ARROW = _arrow_icon()
+    return f"""
 QWidget {{ background: {BG}; color: {TEXT}; font-family: 'Segoe UI'; font-size: 10pt; }}
 QLabel {{ background: transparent; }}
 QLabel#muted {{ color: {MUTED}; }}
@@ -66,10 +88,13 @@ QPushButton#step {{ font-size: 13pt; padding: 0; min-width: 32px; max-width: 32p
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QFontComboBox {{
     background: {FIELD}; border: 1px solid {LINE}; border-radius: 6px; padding: 5px 8px; min-height: 20px; }}
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{ border-color: {ACCENT}; }}
-QComboBox::drop-down {{ border: none; width: 22px; }}
+QComboBox::drop-down {{ border: none; width: 26px; subcontrol-origin: padding; subcontrol-position: center right; }}
+QComboBox::down-arrow {{ image: url({ARROW}); width: 10px; height: 10px; }}
+QLineEdit, QSpinBox, QDoubleSpinBox {{ selection-background-color: {ACCENT}; selection-color: #000; }}
 QComboBox QAbstractItemView {{ background: {CARD}; border: 1px solid {LINE}; selection-background-color: {FIELD}; selection-color: {TEXT}; }}
 QTableWidget {{ background: {FIELD}; gridline-color: {LINE}; border: 1px solid {LINE}; border-radius: 6px; selection-background-color: #3a3d14; selection-color: {TEXT}; }}
 QHeaderView::section {{ background: {CARD}; color: {MUTED}; padding: 6px; border: none; border-bottom: 1px solid {LINE}; font-size: 8.5pt; font-weight: 600; }}
+QSlider {{ min-height: 26px; background: transparent; }}
 QSlider::groove:horizontal {{ height: 4px; background: {LINE}; border-radius: 2px; }}
 QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}
 QSlider::handle:horizontal {{ width: 14px; margin: -6px 0; background: {TEXT}; border-radius: 7px; }}
@@ -81,6 +106,7 @@ QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
 QScrollBar::handle:vertical {{ background: {LINE}; border-radius: 5px; min-height: 30px; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 """
+
 
 
 # ---- small building blocks ------------------------------------------------
@@ -226,7 +252,7 @@ class SettingsWindow(QWidget):
         self.setWindowTitle("az-overlay")
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self.setPalette(dark_palette())
-        self.setStyleSheet(STYLE)
+        self.setStyleSheet(style())
         self.resize(720, 640)
         self.setMinimumSize(600, 480)
         self._loading = False
