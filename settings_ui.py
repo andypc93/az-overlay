@@ -70,19 +70,23 @@ QWidget {{ background: {BG}; color: {TEXT}; font-family: 'Segoe UI'; font-size: 
 QLabel {{ background: transparent; }}
 QLabel#muted {{ color: {MUTED}; }}
 QLabel#section {{ color: {MUTED}; font-size: 8.5pt; font-weight: 600; letter-spacing: 1px; }}
-QLabel#brand {{ font-family: 'Segoe UI Variable Display', 'Segoe UI'; font-size: 13pt; font-weight: 600; }}
+QLabel#brand {{ font-family: 'Segoe UI Variable Display', 'Segoe UI'; font-size: 17pt; font-weight: 700; }}
+QLabel#pageTitle {{ font-size: 22pt; font-weight: 600; }}
+QLabel#badge {{ color: {ACCENT}; background: #2b301c; border: 1px solid #424925; border-radius: 10px; padding: 4px 10px; font-size: 8pt; font-weight: 600; }}
 QFrame#header {{ background: {CARD}; border-bottom: 1px solid {LINE}; }}
 QFrame#footer {{ background: {CARD}; border-top: 1px solid {LINE}; }}
 QFrame#card {{ background: {CARD}; border: 1px solid {LINE}; border-radius: 8px; }}
-QFrame#card QWidget {{ background: transparent; }}
+QFrame#card QLabel, QFrame#card QCheckBox {{ background: transparent; }}
 QListWidget#nav {{ background: {BG}; border: none; border-right: 1px solid {LINE}; outline: 0; padding: 8px 0; }}
-QListWidget#nav::item {{ padding: 9px 16px; margin: 2px 8px; border-radius: 6px; color: {MUTED}; }}
+QListWidget#nav::item {{ padding: 14px 16px; margin: 3px 10px; border-radius: 6px; color: {MUTED}; }}
 QListWidget#nav::item:hover {{ background: {CARD}; color: {TEXT}; }}
 QListWidget#nav::item:selected {{ background: {CARD}; color: {TEXT}; border-left: 3px solid {ACCENT}; padding-left: 13px; }}
 QScrollArea {{ border: none; }}
 QPushButton {{ background: {FIELD}; border: 1px solid {LINE}; border-radius: 6px; padding: 6px 14px; }}
 QPushButton:hover {{ border-color: #4a4e58; background: #2c2f36; }}
 QPushButton:pressed {{ background: #22242a; }}
+QPushButton:focus {{ border-color: {ACCENT}; }}
+QPushButton:disabled {{ color: #646975; background: {CARD}; border-color: {LINE}; }}
 QPushButton:checked {{ background: {ACCENT}; color: #000; border-color: {ACCENT}; }}
 QPushButton#primary {{ background: {ACCENT}; color: #000; border-color: {ACCENT}; font-weight: 600; }}
 QPushButton#primary:hover {{ background: #d9e41a; }}
@@ -96,7 +100,9 @@ QComboBox::drop-down {{ border: none; width: 26px; subcontrol-origin: padding; s
 QComboBox::down-arrow {{ image: url({ARROW}); width: 10px; height: 10px; }}
 QLineEdit, QSpinBox, QDoubleSpinBox {{ selection-background-color: {ACCENT}; selection-color: #000; }}
 QComboBox QAbstractItemView {{ background: {CARD}; border: 1px solid {LINE}; selection-background-color: {FIELD}; selection-color: {TEXT}; }}
-QTableWidget {{ background: {FIELD}; gridline-color: {LINE}; border: 1px solid {LINE}; border-radius: 6px; selection-background-color: #3a3d14; selection-color: {TEXT}; }}
+QTableWidget {{ background: {FIELD}; alternate-background-color: {CARD}; gridline-color: {LINE}; border: 1px solid {LINE}; border-radius: 6px; selection-background-color: #3a3d14; selection-color: {TEXT}; }}
+QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {LINE}; }}
+QTableWidget::item:selected {{ background: #363d24; color: {TEXT}; }}
 QHeaderView::section {{ background: {CARD}; color: {MUTED}; padding: 6px; border: none; border-bottom: 1px solid {LINE}; font-size: 8.5pt; font-weight: 600; }}
 QSlider {{ min-height: 26px; background: transparent; }}
 QSlider::groove:horizontal {{ height: 4px; background: {LINE}; border-radius: 2px; }}
@@ -209,7 +215,7 @@ class PadPreview(QWidget):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self.setFixedHeight(150)
+        self.setFixedHeight(180)
 
     def paintEvent(self, _e):
         c = {k: QColor(v) for k, v in self.cfg["colors"].items()}
@@ -218,13 +224,18 @@ class PadPreview(QWidget):
                      QFont.Weight.Bold if fnt["bold"] else QFont.Weight.Normal)
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        w = self.cfg["cell_w"] * 0.9
-        h = min(self.cfg["cell_h"] * 0.9, self.height() - 24)
+        ratio = min(0.9, (self.width() - 76) / (2 * self.cfg["cell_w"]),
+                    (self.height() - 52) / self.cfg["cell_h"])
+        w = self.cfg["cell_w"] * ratio
+        h = self.cfg["cell_h"] * ratio
         gap = 28
         x0 = (self.width() - (2 * w + gap)) / 2
         y0 = (self.height() - h - 18) / 2
         r = 10
-        circle = self.cfg.get("shape") == "circle"
+        p.setPen(QPen(QColor(LINE), 1))
+        for x in range(12, self.width(), 20):
+            for y in range(12, self.height(), 20):
+                p.drawPoint(x, y)
         for x, state in ((x0, "idle"), (x0 + w + gap, "pressed")):
             rect = QRectF(x, y0, w, h)
             if state == "pressed":
@@ -316,8 +327,8 @@ class SettingsWindow(QWidget):
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self.setPalette(dark_palette())
         self.setStyleSheet(style())
-        self.resize(780, 660)
-        self.setMinimumSize(600, 480)
+        self.resize(1000, 820)
+        self.setMinimumSize(820, 580)
         self._loading = False
 
         self.save_timer = QTimer(self)
@@ -335,7 +346,9 @@ class SettingsWindow(QWidget):
         body.setSpacing(0)
         self.nav = QListWidget()
         self.nav.setObjectName("nav")
-        self.nav.setFixedWidth(150)
+        self.nav.setFixedWidth(165)
+        self.nav.setAccessibleName("Settings pages")
+        self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         for name in self.PAGES:
             QListWidgetItem(name, self.nav)
         self.stack = QStackedWidget()
@@ -355,25 +368,37 @@ class SettingsWindow(QWidget):
     def _header(self):
         f = QFrame()
         f.setObjectName("header")
-        h = QHBoxLayout(f)
-        h.setContentsMargins(20, 12, 20, 12)
+        header = QVBoxLayout(f)
+        header.setContentsMargins(24, 18, 24, 16)
+        header.setSpacing(18)
+        title = QHBoxLayout()
+        wordmark = QVBoxLayout()
+        wordmark.setSpacing(2)
+        h = QHBoxLayout()
         h.setSpacing(10)
         brand = QLabel(APP_NAME)
         brand.setObjectName("brand")
-        h.addWidget(brand)
-        h.addStretch(1)
+        wordmark.addWidget(brand)
+        tagline = muted("Your inputs. Your layout.")
+        tagline.setWordWrap(False)
+        wordmark.addWidget(tagline)
+        title.addLayout(wordmark)
+        title.addStretch(1)
+        badge = QLabel("LIVE EDITOR")
+        badge.setObjectName("badge")
+        title.addWidget(badge, 0, Qt.AlignmentFlag.AlignVCenter)
+        header.addLayout(title)
+        header.addLayout(h)
         b_tpl = QPushButton("+ New layout")
         b_tpl.setToolTip("Create a layout from a template: Azeron, keyboards, Xbox, PlayStation")
         b_tpl.clicked.connect(self._new_from_template)
-        h.addWidget(b_tpl)
-        h.addSpacing(12)
         h.addWidget(muted("Layout"))
         self.profile_combo = QComboBox()
         self.profile_combo.setMinimumWidth(200)
         self.profile_combo.activated.connect(self._profile_selected)
-        h.addWidget(self.profile_combo)
+        self.profile_combo.setAccessibleName("Saved layout")
+        h.addWidget(self.profile_combo, 1)
         b_save = QPushButton("Save")
-        b_save.setObjectName("primary")
         b_save.setToolTip("Save current settings into the selected layout")
         b_save.clicked.connect(self._profile_save)
         b_new = QPushButton("Save as…")
@@ -383,6 +408,9 @@ class SettingsWindow(QWidget):
         b_del.clicked.connect(self._profile_delete)
         for b in (b_save, b_new, b_del):
             h.addWidget(b)
+        h.addSpacing(8)
+        b_tpl.setObjectName("primary")
+        h.addWidget(b_tpl)
         self._refresh_profiles()
         return f
 
@@ -391,10 +419,10 @@ class SettingsWindow(QWidget):
         f.setObjectName("footer")
         h = QHBoxLayout(f)
         h.setContentsMargins(20, 10, 20, 10)
-        self.status = muted("")
+        self.status = muted("Changes apply live · Settings autosaved")
         h.addWidget(self.status, 1)
         self.chk_visible = QCheckBox("Overlay visible")
-        self.chk_visible.setChecked(True)
+        self.chk_visible.setChecked(self.overlay.isVisible())
         self.chk_visible.toggled.connect(self.overlay.setVisible)
         h.addWidget(self.chk_visible)
         quit_btn = QPushButton("Quit overlay")
@@ -403,12 +431,17 @@ class SettingsWindow(QWidget):
         h.addWidget(quit_btn)
         return f
 
-    def _page(self, *cards):
+    def _page(self, title, description, *cards):
         """Scrollable page holding a column of cards."""
         inner = QWidget()
         v = QVBoxLayout(inner)
         v.setContentsMargins(24, 20, 24, 20)
         v.setSpacing(14)
+        heading = QLabel(title)
+        heading.setObjectName("pageTitle")
+        v.addWidget(heading)
+        v.addWidget(muted(description))
+        v.addSpacing(4)
         for c in cards:
             v.addWidget(c)
         v.addStretch(1)
@@ -438,7 +471,7 @@ class SettingsWindow(QWidget):
     # ---- pages --------------------------------------------------------
     def _layout_page(self):
         c1, l1 = card()
-        l1.addWidget(section("Place it"))
+        l1.addWidget(section("Position & scale"))
         self.btn_move = QPushButton("Move / resize with mouse")
         self.btn_move.setCheckable(True)
         self.btn_move.setMinimumHeight(36)
@@ -455,8 +488,11 @@ class SettingsWindow(QWidget):
             sp.valueChanged.connect(lambda val, k=key: self._set(k, val))
         self.sp_scale.setValue(self.cfg.get("scale", 1.0))
         self.sp_scale.valueChanged.connect(lambda val: self._set("scale", round(val, 3)))
-        f.addRow("X", stepper(self.sp_x))
-        f.addRow("Y", stepper(self.sp_y))
+        self.sp_x.setSuffix(" px")
+        self.sp_y.setSuffix(" px")
+        self.sp_scale.setSuffix(" ×")
+        f.addRow("Horizontal", stepper(self.sp_x))
+        f.addRow("Vertical", stepper(self.sp_y))
         f.addRow("Scale", stepper(self.sp_scale))
         self.sl_opacity = QSlider(Qt.Orientation.Horizontal); self.sl_opacity.setRange(10, 100)
         self.sl_opacity.setValue(int(self.cfg.get("opacity", 0.85) * 100))
@@ -474,6 +510,7 @@ class SettingsWindow(QWidget):
         self.sp_ch = QSpinBox(); self.sp_ch.setRange(20, 400); self.sp_ch.setValue(self.cfg["cell_h"])
         self.sp_gap = QSpinBox(); self.sp_gap.setRange(0, 100); self.sp_gap.setValue(self.cfg["gap"])
         for sp, key in ((self.sp_cw, "cell_w"), (self.sp_ch, "cell_h"), (self.sp_gap, "gap")):
+            sp.setSuffix(" px")
             sp.valueChanged.connect(lambda val, k=key: self._set(k, val))
         f2.addRow("Width", stepper(self.sp_cw))
         f2.addRow("Height", stepper(self.sp_ch))
@@ -491,16 +528,29 @@ class SettingsWindow(QWidget):
             le.editingFinished.connect(lambda le=le, n=name: self._hotkey(n, le))
             f3.addRow(text, le)
         l3.addLayout(f3)
-        return self._page(c1, c2, c3)
+        return self._page("Layout", "Position your overlay and fine-tune its size on screen.", c1, c2, c3)
 
     def _keys_page(self):
         c1, l1 = card()
         l1.addWidget(section("Pads"))
-        l1.addWidget(muted("Label is the text on the pad (a key name, or a macro name). Input is what lights it: "
-                           "a key (F5), several keys for a macro (F5, F6), a chord (Ctrl+Shift+K) or a controller "
-                           "button (gp:a). Leave Input empty to use the label. Col / Row / W / H place and size it."))
+        l1.addWidget(muted("Double-click a cell to edit. Leave Input empty to use the label, "
+                           "or select a pad and capture a key or controller button."))
         self.table = QTableWidget(0, 6)
+        search_row = QHBoxLayout()
+        self.key_search = QLineEdit()
+        self.key_search.setPlaceholderText("Find a pad by label or input…")
+        self.key_search.setClearButtonEnabled(True)
+        self.key_search.setAccessibleName("Find a pad")
+        self.key_search.textChanged.connect(self._filter_keys)
+        self.key_count = muted("")
+        search_row.addWidget(self.key_search, 1)
+        search_row.addWidget(self.key_count)
+        l1.addLayout(search_row)
         self.table.setHorizontalHeaderLabels(["Label", "Input", "Col", "Row", "W", "H"])
+        for col, hint in enumerate(("Text displayed on the pad", "Key: F5 · Macro: F5, F6 · Chord: Ctrl+Shift+K · Controller: gp:a",
+                                    "Horizontal position in key units", "Vertical position in key units",
+                                    "Width in key units", "Height in key units")):
+            self.table.horizontalHeaderItem(col).setToolTip(hint)
         hdr = self.table.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -508,6 +558,8 @@ class SettingsWindow(QWidget):
             hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.Fixed)
             self.table.setColumnWidth(c, 56)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(38)
+        self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -521,13 +573,14 @@ class SettingsWindow(QWidget):
         self.btn_capture.toggled.connect(self._toggle_capture)
         btn_add = QPushButton("Add pad")
         btn_add.clicked.connect(self._add_pad)
-        btn_del = QPushButton("Remove")
+        btn_del = self.btn_remove_pad = QPushButton("Remove")
         btn_del.setObjectName("quiet")
         btn_del.clicked.connect(self._remove_pad)
         row.addWidget(self.btn_capture, 1)
         row.addWidget(btn_add)
         row.addWidget(btn_del)
         l1.addLayout(row)
+        self.table.itemSelectionChanged.connect(self._pad_selection_changed)
 
         c2, l2 = card()
         l2.addWidget(section("Sticks & d-pads"))
@@ -541,6 +594,7 @@ class SettingsWindow(QWidget):
             sh.setSectionResizeMode(c, QHeaderView.ResizeMode.Fixed)
             self.stick_table.setColumnWidth(c, 62 if c < 5 else 48)
         self.stick_table.verticalHeader().setVisible(False)
+        self.stick_table.verticalHeader().setDefaultSectionSize(36)
         self.stick_table.setShowGrid(False)
         self.stick_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.stick_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -565,7 +619,7 @@ class SettingsWindow(QWidget):
         self.joy_edits = {}  # kept for older callers; sticks are edited in the table now
         self._fill_sticks()
         self._fill_table()
-        return self._page(c1, c2)
+        return self._page("Keys & inputs", "Map your buttons, capture inputs, and arrange every pad.", c1, c2)
 
     def _appearance_page(self):
         c0, l0 = card()
@@ -610,10 +664,13 @@ class SettingsWindow(QWidget):
         reset.setObjectName("quiet")
         reset.clicked.connect(self._reset_colors)
         l2.addWidget(reset, 0, Qt.AlignmentFlag.AlignLeft)
-        return self._page(c0, c1, c2)
+        return self._page("Appearance", "Make it yours. Preview your font and colors as you edit.", c0, c1, c2)
 
     # ---- behaviour ----------------------------------------------------
     def present(self):
+        self.chk_visible.blockSignals(True)
+        self.chk_visible.setChecked(self.overlay.isVisible())
+        self.chk_visible.blockSignals(False)
         self.show()
         self.raise_()
         self.activateWindow()
@@ -621,6 +678,9 @@ class SettingsWindow(QWidget):
     def closeEvent(self, e):
         self.btn_move.setChecked(False)
         self.btn_capture.setChecked(False)
+        if self.save_timer.isActive():
+            self.save_timer.stop()
+            self._save_now()
         e.accept()
 
     def _apply(self):
@@ -667,6 +727,25 @@ class SettingsWindow(QWidget):
         self._schedule_save()
 
     # keys table
+    def _filter_keys(self, text=None):
+        query = self.key_search.text().strip().casefold()
+        visible = 0
+        for row in range(self.table.rowCount()):
+            match = any(query in self.table.item(row, col).text().casefold() for col in (0, 1))
+            self.table.setRowHidden(row, not match)
+            visible += int(match)
+        self.key_count.setText(f"{visible} / {self.table.rowCount()} pads")
+        if self.table.currentRow() >= 0 and self.table.isRowHidden(self.table.currentRow()):
+            self.table.clearSelection()
+        self._pad_selection_changed()
+
+    def _pad_selection_changed(self):
+        selected = bool(self.table.selectionModel().selectedRows())
+        self.btn_capture.setEnabled(selected)
+        self.btn_remove_pad.setEnabled(selected)
+        if not selected:
+            self.btn_capture.setChecked(False)
+
     @staticmethod
     def _input_text(k):
         if k.get("input") is not None:
@@ -696,6 +775,8 @@ class SettingsWindow(QWidget):
                 it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(r, c, it)
         self._loading = False
+
+        self._filter_keys()
 
     def _table_edited(self, item):
         if self._loading:
@@ -743,6 +824,7 @@ class SettingsWindow(QWidget):
         self._flash(msg)
 
     def _add_pad(self):
+        self.key_search.clear()
         used = {(k["col"], k["row"]) for k in self.cfg["keys"]}
         col = row = 0
         while (col, row) in used:
@@ -768,7 +850,7 @@ class SettingsWindow(QWidget):
             self._flash("Select a pad row first")
             return
         self.overlay.capturing = on
-        self.btn_capture.setText("Press a button on the Cyborg…" if on else "Capture key for selected pad")
+        self.btn_capture.setText("Listening… press a key or button" if on else "Capture key for selected pad")
 
     def _on_key_captured(self, token):
         self.btn_capture.setChecked(False)
@@ -960,15 +1042,17 @@ class SettingsWindow(QWidget):
 
     # ---- save ---------------------------------------------------------
     def _schedule_save(self):
+        self.status.setText("Applying changes…")
         self.save_timer.start()
 
     def _save_now(self):
         try:
             save_config(self.cfg)
-            self._flash("Saved")
+            self._flash("Settings saved")
         except OSError as e:
             self._flash(f"Save failed: {e}")
 
     def _flash(self, text):
         self.status.setText(text)
-        QTimer.singleShot(2500, lambda: self.status.setText("") if self.status.text() == text else None)
+        QTimer.singleShot(2500, lambda: self.status.setText("Changes apply live · Settings autosaved")
+                          if self.status.text() == text else None)
