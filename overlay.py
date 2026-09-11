@@ -285,13 +285,44 @@ def load_config():
     cfg["hotkeys"].setdefault("toggle", "O")
     cfg["hotkeys"].setdefault("settings", "S")
     cfg["hotkeys"].setdefault("quit", "Q")
+    names = list_profiles()
+    current = cfg.get("profile", "")
+    candidates = ([current] if current in names else []) + [n for n in names if n != current]
+    cfg["profile"] = ""
+    for name in candidates:
+        try:
+            data = load_profile(name)
+        except (OSError, ValueError):
+            continue
+        for key in PROFILE_KEYS:
+            cfg.pop(key, None)
+        cfg.update({key: data[key] for key in PROFILE_KEYS if key in data})
+        cfg["profile"] = name
+        break
     return cfg
 
 
 def save_config(cfg):
+    """Autosave named layouts; keep unnamed layout edits in memory only."""
+    data = dict(cfg)
+    if cfg.get("profile"):
+        data["profile"] = save_profile(cfg["profile"], cfg)
+    else:
+        try:
+            with open(CONFIG_PATH, encoding="utf-8") as f:
+                previous = json.load(f)
+        except FileNotFoundError:
+            with open(os.path.join(_DEFAULTS, "config.json"), encoding="utf-8") as f:
+                previous = json.load(f)
+        for key in PROFILE_KEYS:
+            data.pop(key, None)
+            if key in previous:
+                data[key] = previous[key]
+        remembered = previous.get("profile", "")
+        data["profile"] = remembered if remembered in list_profiles() else ""
     tmp = CONFIG_PATH + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2)
+        json.dump(data, f, indent=2)
         f.write("\n")
     os.replace(tmp, CONFIG_PATH)
 
@@ -317,9 +348,12 @@ def load_profile(name):
 def save_profile(name, cfg):
     os.makedirs(PROFILE_DIR, exist_ok=True)
     data = {k: cfg[k] for k in PROFILE_KEYS if k in cfg}
-    with open(_profile_path(name), "w", encoding="utf-8") as f:
+    path = _profile_path(name)
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
         f.write("\n")
+    os.replace(path + ".tmp", path)
+    return os.path.splitext(os.path.basename(path))[0]
 
 
 def delete_profile(name):
@@ -892,6 +926,7 @@ def main():
     from settings_ui import SettingsWindow  # local import keeps overlay importable in tests
 
     settings = SettingsWindow(overlay)
+    app.aboutToQuit.connect(settings._save_now)
     overlay.open_settings.connect(settings.present)
 
     tray = QSystemTrayIcon(icon)

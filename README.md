@@ -7,7 +7,8 @@
     <a href="#get-started">Get started</a> ·
     <a href="#make-it-yours">Customize</a> ·
     <a href="#supported-devices">Devices</a> ·
-    <a href="#build-an-executable">Build</a>
+    <a href="#build-an-executable">Build</a> ·
+    <a href="#support-az-overlay">Donate</a>
   </p>
 </div>
 
@@ -76,6 +77,11 @@ An empty input uses the label as its binding. An empty label and input hide the
 pad. Enable **Edit position & size** to reveal geometry columns, or expand
 **Sticks & d-pads** to configure directional controls.
 
+Turn on **Show all pads** for a clickable layout that includes blank pads.
+Click a pad to select its mapping in the table. **Add row** adds blank pads
+below the layout; **Add column** adds them to the right. Both reveal the layout
+automatically so you can select and assign the new pads.
+
 ### 4. Set the style
 
 On **Appearance**, adjust the font, size, weight, and colors. The live preview
@@ -87,9 +93,10 @@ Choose **Light** or **Dark** in the **Theme** selector at the top of settings.
 Your choice applies immediately and is remembered across restarts and layout
 changes. It controls the settings window; overlay colors are set separately.
 
-> **Working settings save automatically.** Use **Save layout** to update a named
-> layout with your current edits. **More → Save as new layout…** keeps a separate
-> copy; **More → Delete saved layout…** removes a saved layout.
+> **Saved layouts autosave changes.** The app remembers your last selected layout
+> and reopens it at startup. Unnamed layout edits stay temporary until you choose
+> **Save layout**. **More → Save as new layout…** keeps a separate copy;
+> **More → Delete saved layout…** removes a saved layout.
 
 ## Supported devices
 
@@ -179,6 +186,18 @@ python -m pytest -q
 - Use **windowed or borderless** display mode. Exclusive fullscreen can hide the overlay.
 - Controller input uses SDL's game-controller mappings. Detection depends on the device and its driver.
 - The app uses global input hooks. Check your game's rules before using it with anti-cheat software.
+
+## Support AZ-Overlay
+
+Enjoying the overlay? A donation helps support its development. Thank you!
+
+<!-- Wrap the PayPal badge in a link once the creator's PayPal URL is available. -->
+<p>
+  <img src="assets/donate-paypal.svg" alt="Donate with PayPal — link coming soon" width="190" height="40">
+  <a href="https://venmo.com/andrespc93"><img src="assets/donate-venmo.svg" alt="Donate with Venmo to @andrespc93" width="190" height="40"></a>
+</p>
+
+Donate on Venmo to **@andrespc93**. The PayPal donation link is coming soon.
 
 ## License
 
