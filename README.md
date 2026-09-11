@@ -1,75 +1,174 @@
-# AZ-Overlay
+<div align="center">
+  <img src="assets/logo_256.png" alt="AZ-Overlay logo" width="112">
+  <h1>AZ-Overlay</h1>
+  <p>A customizable input overlay for Azeron keypads, keyboards, and controllers.</p>
+  <p><strong>Windows · Transparent · Click-through · Live editing</strong></p>
+  <p>
+    <a href="#get-started">Get started</a> ·
+    <a href="#make-it-yours">Customize</a> ·
+    <a href="#supported-devices">Devices</a> ·
+    <a href="#build-an-executable">Build</a>
+  </p>
+</div>
 
-Transparent, click-through, always-on-top overlay that shows your input device
-and lights the buttons you press. Built-in templates:
+<br>
 
-- **Azeron**: Cyborg II, Cyborg II Compact, Cyborg, Cyborg Compact, Keyzen, Cyro,
-  Classic, Compact (keys + analog thumbstick; Cyro also lights mouse buttons)
-- **Keyboards**: 100%, 1800, 96%, 80% TKL, 75% exploded / compact, 65% exploded /
-  compact, 60%, 50%, 40%, each in US (ANSI), UK, German, French, Spanish (ISO)
-- **Xbox** and **PlayStation** controllers (analog sticks and triggers animate)
+![AZ-Overlay settings window](docs/settings.png)
 
-PySide6 (Qt) for drawing, pynput for the keyboard hook, pygame-ce (SDL) for controllers.
+Show your inputs as you play. Keys light up when pressed and fade on release;
+controller sticks and triggers animate as they move. The overlay stays above
+your game and lets clicks pass through during normal use.
 
-## Run
+## Get started
 
-```bash
-pip install -r requirements.txt
+Install Python on Windows, open a terminal in the project folder, and run:
+
+```powershell
+python -m pip install -r requirements.txt
 python overlay.py
 ```
 
-`run.bat` does the same without a console window.
+For analog sticks and controller input, also install the optional controller backend:
 
-**No Python?** Run `build.bat` (needs `pip install pyinstaller`) and use
-`dist\AZ-Overlay.exe`, or grab the exe from the GitHub release. The exe keeps
-its settings and saved layouts in `%APPDATA%z-overlay`, so replacing or
-rebuilding the exe never erases them. Put a shortcut to it in
-`shell:startup` if you want it at login.
+```powershell
+python -m pip install pygame-ce
+```
 
-## Settings GUI
+Once dependencies are installed, double-click **run.bat** to launch without a
+console window. Open settings by double-clicking the tray icon or pressing
+**Ctrl + Alt + S**.
 
-A tray icon appears while running. Double-click it (or Ctrl+Alt+S) to open
-Settings. Everything applies live and autosaves to `config.json`:
+## Make it yours
 
-- **Layouts**: header saves/loads named layouts (`profiles/*.json` in the data
-  folder). Ship one per game or Azeron profile.
-- **Layout tab**: X/Y, scale, opacity, pad size. "Move / resize with mouse"
-  makes the overlay solid and clickable: drag to move, scroll-wheel to resize,
-  click a key then press the Cyborg button to rebind it, right-click to clear.
-- **+ New layout**: pick a template (Azeron / keyboard form factor + language /
-  Xbox / PlayStation). Creates a saved layout and switches to it.
-- **Keys**: table of pads. *Label* is the text shown; *Input* is what lights
-  it: a key (`F5`), several keys for a macro (`F5, F6`), a chord
-  (`Ctrl+Shift+K`), a controller button (`gp:a`) or a physical key
-  (`sc:0x1e`). Empty input = use the label. Select a row, hit "Capture key",
-  press the button: input set. Empty label + empty input = pad hidden.
-  Sticks / d-pads have their own table (WASD, analog, d-pad).
-- **Appearance**: live preview of an idle and a pressed key; font family, size, bold; fill, border and text color for idle and pressed states.
+### 1. Choose a layout
 
-## Hotkeys (always Ctrl+Alt + key, editable)
+Select **+ New layout**, choose your device and template, and give it a name.
+Switch between saved layouts using the selector at the top of settings.
 
-| Keys         | Action            |
-| ------------ | ----------------- |
-| Ctrl+Alt+O   | Show / hide       |
-| Ctrl+Alt+S   | Open settings     |
-| Ctrl+Alt+Q   | Quit              |
+### 2. Position the overlay
 
-## Config (`config.json`)
+On **Layout**, select **Edit on screen**. Drag to move, scroll to resize, then
+select **Done editing**. Use the **Size** and **Opacity** sliders for quick
+adjustments. Expand **Precise position & scale**, **Key dimensions**, or
+**Keyboard shortcuts** when you need finer control.
 
-- `opacity` 0..1, `scale` (0.5 = half size), `x`/`y` screen position.
-- `keys`: list of `{label, input?, sc?, col, row, w, h, shape?, axis?}` in key units.
-- `sticks`: list of `{label, col, row, w, h, up/down/left/right?, axes?, click?}`.
-- `font`: family, size (pt at scale 1.0), bold.
-- `colors` (idle_/pressed_ × fill/outline/text), `hotkeys` as named.
+While editing on screen, click a pad and press an input to rebind it.
+Right-click a pad to clear it.
 
-Edit the labels to match your Azeron profile. The default layout mirrors the
-software's editor view.
+### 3. Map your inputs
 
-## Limitations
+On **Keys**, find and select a pad, choose **Record input**, then press a key or
+controller button. Use **Cancel recording** to stop; leaving the page also
+cancels recording.
 
-- Works over borderless / windowed games. Exclusive fullscreen hides every
-  overlay, including this one. Switch the game to borderless.
-- Controllers are read through SDL; anything Windows sees as an Xbox or
-  PlayStation pad works, including the Azeron thumbstick in analog mode.
-- Uses a global keyboard hook. Most anti-cheat is fine with this, but it is
-  the same mechanism macro tools use, so check your game's rules.
+Double-click a cell to edit it directly. **Label** controls the displayed text;
+**Input** controls what lights it up.
+
+| Input | Example | Behavior |
+| :--- | :--- | :--- |
+| Single key | `F5` | Lights while the key is held |
+| Any of several keys | `F5, F6` | Lights when either key is held |
+| Key combination | `Ctrl+Shift+K` | Requires the combination |
+| Controller button | `gp:a` | Uses the controller input |
+| Physical key | `sc:0x1e` | Matches a keyboard position by scancode |
+
+An empty input uses the label as its binding. An empty label and input hide the
+pad. Enable **Edit position & size** to reveal geometry columns, or expand
+**Sticks & d-pads** to configure directional controls.
+
+### 4. Set the style
+
+On **Appearance**, adjust the font, size, weight, and colors. The live preview
+shows idle and pressed states, each with its own fill, border, and text color.
+
+> **Working settings save automatically.** Use **Save layout** to update a named
+> layout with your current edits. **More → Save as new layout…** keeps a separate
+> copy; **More → Delete saved layout…** removes a saved layout.
+
+## Supported devices
+
+| Device | Templates |
+| :--- | :--- |
+| **Azeron** | Cyborg II, Cyborg II Compact, Cyborg, Cyborg Compact, Keyzen, Cyro, Classic, Compact |
+| **Keyboards** | 100%, 1800, 96%, 80% TKL, 75% and 65% exploded or compact, 60%, 50%, 40% |
+| **Controllers** | Xbox and PlayStation, with analog sticks and triggers |
+
+Keyboard templates include US (ANSI), UK, German, French, and Spanish (ISO)
+layouts. Azeron templates support keys and an analog thumbstick; the Cyro
+template also supports mouse-button highlighting.
+
+## Keyboard shortcuts
+
+| Default shortcut | Action |
+| :--- | :--- |
+| **Ctrl + Alt + O** | Show or hide the overlay |
+| **Ctrl + Alt + S** | Open settings |
+| **Ctrl + Alt + Q** | Quit |
+
+Change the final key under **Layout → Keyboard shortcuts**. The **Ctrl + Alt**
+modifiers stay fixed.
+
+## Settings and saved layouts
+
+| Run mode | Working settings | Named layouts |
+| :--- | :--- | :--- |
+| From source | `config.json` in the project folder | `profiles/` |
+| Packaged executable | `%APPDATA%\az-overlay\config.json` | `%APPDATA%\az-overlay\profiles\` |
+
+Replacing or rebuilding the executable preserves your saved settings. Back up
+the data folder to keep a copy of your layouts.
+
+<details>
+<summary><strong>Editing the configuration manually</strong></summary>
+
+Close the app before editing `config.json` so live settings do not overwrite
+your changes.
+
+| Field | Controls |
+| :--- | :--- |
+| `x`, `y` | Screen position |
+| `scale` | Overall size; `0.5` is half size |
+| `opacity` | Overlay opacity, from `0` to `1` |
+| `cell_w`, `cell_h`, `gap` | Base key dimensions and spacing |
+| `keys` | Labels, input bindings, positions, dimensions, and shapes |
+| `sticks` | Direction bindings, analog axes, click input, and geometry |
+| `font` | Family, point size at scale `1.0`, and bold weight |
+| `colors` | Idle and pressed fill, outline, and text colors |
+| `hotkeys` | Final key for each global shortcut |
+
+Key and stick geometry uses `col`, `row`, `w`, and `h` in key units. Named
+layouts store appearance, geometry, and bindings; keyboard shortcuts remain
+global.
+
+</details>
+
+## Build an executable
+
+Install the app dependencies above, then install the build tools:
+
+```powershell
+python -m pip install pyinstaller pillow pygame-ce
+.\build.bat
+```
+
+The result is **dist\AZ-Overlay.exe**. Python is not required on the computer
+running the packaged app.
+
+To launch at login, place a shortcut to the executable in the folder opened by
+**Win + R → `shell:startup`**.
+
+## Development
+
+Built with **PySide6** for the interface, **pynput** for keyboard and mouse
+input, and the optional **pygame-ce / SDL** backend for controllers.
+
+```powershell
+python -m pip install pytest
+python -m pytest -q
+```
+
+## Compatibility
+
+- Use **windowed or borderless** display mode. Exclusive fullscreen can hide the overlay.
+- Controller input uses SDL's game-controller mappings. Detection depends on the device and its driver.
+- The app uses global input hooks. Check your game's rules before using it with anti-cheat software.

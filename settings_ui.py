@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QAbstractSpinBox, QCheckBox, QColorDialog, QComboBox, QDialog,
     QDialogButtonBox, QDoubleSpinBox, QFontComboBox, QFormLayout, QFrame, QGridLayout,
     QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QMessageBox, QPushButton, QScrollArea, QSlider, QSpinBox, QStackedWidget, QTableWidget,
+    QMessageBox, QMenu, QPushButton, QScrollArea, QSlider, QSpinBox, QStackedWidget, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -68,6 +68,7 @@ def style():
     return f"""
 QWidget {{ background: {BG}; color: {TEXT}; font-family: 'Segoe UI'; font-size: 10pt; }}
 QLabel {{ background: transparent; }}
+QWidget#inline {{ background: transparent; }}
 QLabel#muted {{ color: {MUTED}; }}
 QLabel#section {{ color: {MUTED}; font-size: 8.5pt; font-weight: 600; letter-spacing: 1px; }}
 QLabel#brand {{ font-family: 'Segoe UI Variable Display', 'Segoe UI'; font-size: 17pt; font-weight: 700; }}
@@ -90,8 +91,16 @@ QPushButton:disabled {{ color: #646975; background: {CARD}; border-color: {LINE}
 QPushButton:checked {{ background: {ACCENT}; color: #000; border-color: {ACCENT}; }}
 QPushButton#primary {{ background: {ACCENT}; color: #000; border-color: {ACCENT}; font-weight: 600; }}
 QPushButton#primary:hover {{ background: #d9e41a; }}
+QPushButton#primary:disabled {{ background: {FIELD}; color: {MUTED}; border-color: {LINE}; }}
 QPushButton#quiet {{ background: transparent; border-color: transparent; color: {MUTED}; }}
 QPushButton#quiet:hover {{ color: {TEXT}; background: {FIELD}; }}
+QPushButton#disclosure {{ text-align: left; background: transparent; border: none; color: {MUTED}; padding: 8px 0; }}
+QPushButton#disclosure:hover {{ color: {TEXT}; }}
+QPushButton#disclosure:checked {{ color: {TEXT}; background: transparent; }}
+QMenu {{ background: {CARD}; border: 1px solid {LINE}; padding: 6px; }}
+QMenu::item {{ padding: 8px 18px; border-radius: 4px; }}
+QMenu::item:selected {{ background: {FIELD}; }}
+QMenu::item:disabled {{ color: {MUTED}; }}
 QPushButton#step {{ font-size: 13pt; padding: 0; min-width: 32px; max-width: 32px; min-height: 30px; max-height: 30px; }}
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QFontComboBox {{
     background: {FIELD}; border: 1px solid {LINE}; border-radius: 6px; padding: 5px 8px; min-height: 20px; }}
@@ -151,11 +160,34 @@ def form():
     return f
 
 
+def disclosure(title, content):
+    """Keep infrequent controls available without crowding the main workflow."""
+    wrapper = QWidget()
+    wrapper.setObjectName("inline")
+    layout = QVBoxLayout(wrapper)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(6)
+    title = title.replace("&", "&&")
+    button = QPushButton(f"▸  {title}")
+    button.setObjectName("disclosure")
+    button.setCheckable(True)
+    content.setVisible(False)
+    def toggle(opened):
+        content.setVisible(opened)
+        button.setText(f"{'▾' if opened else '▸'}  {title}")
+    button.toggled.connect(toggle)
+    layout.addWidget(button)
+    layout.addWidget(content)
+    return wrapper
+
+
 def stepper(spin):
     """Wrap a spinbox with big - / + buttons (the native arrows are tiny)."""
     spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
     spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
     w = QWidget()
+    w.setObjectName("inline")
+    w.setMaximumWidth(260)
     h = QHBoxLayout(w)
     h.setContentsMargins(0, 0, 0, 0)
     h.setSpacing(4)
@@ -352,7 +384,7 @@ class SettingsWindow(QWidget):
         for name in self.PAGES:
             QListWidgetItem(name, self.nav)
         self.stack = QStackedWidget()
-        self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
+        self.nav.currentRowChanged.connect(self._page_changed)
         body.addWidget(self.nav)
         body.addWidget(self.stack, 1)
         root.addLayout(body, 1)
@@ -398,16 +430,18 @@ class SettingsWindow(QWidget):
         self.profile_combo.activated.connect(self._profile_selected)
         self.profile_combo.setAccessibleName("Saved layout")
         h.addWidget(self.profile_combo, 1)
-        b_save = QPushButton("Save")
-        b_save.setToolTip("Save current settings into the selected layout")
+        b_save = QPushButton("Save layout")
+        b_save.setToolTip("Update this saved layout with your current edits. Working settings are autosaved separately.")
         b_save.clicked.connect(self._profile_save)
-        b_new = QPushButton("Save as…")
-        b_new.clicked.connect(self._profile_save_as)
-        b_del = QPushButton("Delete")
-        b_del.setObjectName("quiet")
-        b_del.clicked.connect(self._profile_delete)
-        for b in (b_save, b_new, b_del):
-            h.addWidget(b)
+        more = QPushButton("More")
+        more.setObjectName("quiet")
+        more.setAccessibleName("Layout options")
+        menu = QMenu(more)
+        menu.addAction("Save as new layout…", self._profile_save_as)
+        self.delete_layout_action = menu.addAction("Delete saved layout…", self._profile_delete)
+        more.setMenu(menu)
+        h.addWidget(b_save)
+        h.addWidget(more)
         h.addSpacing(8)
         b_tpl.setObjectName("primary")
         h.addWidget(b_tpl)
@@ -419,7 +453,7 @@ class SettingsWindow(QWidget):
         f.setObjectName("footer")
         h = QHBoxLayout(f)
         h.setContentsMargins(20, 10, 20, 10)
-        self.status = muted("Changes apply live · Settings autosaved")
+        self.status = muted("Working settings autosaved")
         h.addWidget(self.status, 1)
         self.chk_visible = QCheckBox("Overlay visible")
         self.chk_visible.setChecked(self.overlay.isVisible())
@@ -456,6 +490,11 @@ class SettingsWindow(QWidget):
         self.stack.addWidget(self._keys_page())
         self.stack.addWidget(self._appearance_page())
 
+    def _page_changed(self, index):
+        self.stack.setCurrentIndex(index)
+        if index != 1 and hasattr(self, "btn_capture"):
+            self.btn_capture.setChecked(False)
+
     def _rebuild_tabs(self):
         """Recreate every widget from cfg (after loading a profile)."""
         idx = self.stack.currentIndex()
@@ -471,14 +510,15 @@ class SettingsWindow(QWidget):
     # ---- pages --------------------------------------------------------
     def _layout_page(self):
         c1, l1 = card()
-        l1.addWidget(section("Position & scale"))
-        self.btn_move = QPushButton("Move / resize with mouse")
+        l1.addWidget(section("Position your overlay"))
+        self.btn_move = QPushButton("Edit on screen")
+        self.btn_move.setObjectName("primary")
         self.btn_move.setCheckable(True)
         self.btn_move.setMinimumHeight(36)
         self.btn_move.toggled.connect(self._toggle_move)
         l1.addWidget(self.btn_move)
-        l1.addWidget(muted("While on, the overlay turns solid: drag it to move, scroll to resize, "
-                           "click a key then press its Cyborg button to rebind, right-click a key to clear it."))
+        self.move_help = muted("Drag to reposition. Scroll to resize. Choose Done editing when you’re finished.")
+        l1.addWidget(self.move_help)
         f = form()
         self.sp_x = QSpinBox(); self.sp_x.setRange(-10000, 10000)
         self.sp_y = QSpinBox(); self.sp_y.setRange(-10000, 10000)
@@ -491,10 +531,20 @@ class SettingsWindow(QWidget):
         self.sp_x.setSuffix(" px")
         self.sp_y.setSuffix(" px")
         self.sp_scale.setSuffix(" ×")
-        f.addRow("Horizontal", stepper(self.sp_x))
-        f.addRow("Vertical", stepper(self.sp_y))
-        f.addRow("Scale", stepper(self.sp_scale))
+        self.sl_scale = QSlider(Qt.Orientation.Horizontal)
+        self.sl_scale.setRange(20, 300)
+        self.sl_scale.setValue(round(self.sp_scale.value() * 100))
+        self.sl_scale.setAccessibleName("Overlay size")
+        self.lbl_scale = muted(f"{self.sl_scale.value()}%")
+        self.lbl_scale.setFixedWidth(44)
+        self.sl_scale.valueChanged.connect(lambda value: self.sp_scale.setValue(value / 100))
+        self.sp_scale.valueChanged.connect(self._sync_scale)
+        scale_row = QHBoxLayout()
+        scale_row.addWidget(self.sl_scale, 1)
+        scale_row.addWidget(self.lbl_scale)
+        f.addRow("Size", scale_row)
         self.sl_opacity = QSlider(Qt.Orientation.Horizontal); self.sl_opacity.setRange(10, 100)
+        self.sl_opacity.setAccessibleName("Overlay opacity")
         self.sl_opacity.setValue(int(self.cfg.get("opacity", 0.85) * 100))
         self.lbl_opacity = muted(f"{self.sl_opacity.value()}%")
         self.lbl_opacity.setFixedWidth(40)
@@ -502,9 +552,18 @@ class SettingsWindow(QWidget):
         row = QHBoxLayout(); row.addWidget(self.sl_opacity, 1); row.addWidget(self.lbl_opacity)
         f.addRow("Opacity", row)
         l1.addLayout(f)
+        precise = QWidget()
+        precise.setObjectName("inline")
+        precise_form = form()
+        precise.setLayout(precise_form)
+        precise_form.addRow("Horizontal", stepper(self.sp_x))
+        precise_form.addRow("Vertical", stepper(self.sp_y))
+        precise_form.addRow("Exact scale", stepper(self.sp_scale))
+        l1.addWidget(disclosure("Precise position & scale", precise))
 
         c2, l2 = card()
-        l2.addWidget(section("Pad shape"))
+        l2.addWidget(section("Key dimensions"))
+        l2.addWidget(muted("Change the size and spacing of individual keys."))
         f2 = form()
         self.sp_cw = QSpinBox(); self.sp_cw.setRange(20, 400); self.sp_cw.setValue(self.cfg["cell_w"])
         self.sp_ch = QSpinBox(); self.sp_ch.setRange(20, 400); self.sp_ch.setValue(self.cfg["cell_h"])
@@ -528,7 +587,8 @@ class SettingsWindow(QWidget):
             le.editingFinished.connect(lambda le=le, n=name: self._hotkey(n, le))
             f3.addRow(text, le)
         l3.addLayout(f3)
-        return self._page("Layout", "Position your overlay and fine-tune its size on screen.", c1, c2, c3)
+        return self._page("Layout", "Get your overlay in the right place, at the right size.", c1,
+                          disclosure("Key dimensions", c2), disclosure("Keyboard shortcuts", c3))
 
     def _keys_page(self):
         c1, l1 = card()
@@ -565,27 +625,37 @@ class SettingsWindow(QWidget):
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setMinimumHeight(260)
         self.table.itemChanged.connect(self._table_edited)
-        l1.addWidget(self.table)
         row = QHBoxLayout()
-        self.btn_capture = QPushButton("Capture key for selected pad")
+        self.btn_capture = QPushButton("Record input")
+        self.btn_capture.setObjectName("primary")
         self.btn_capture.setCheckable(True)
-        self.btn_capture.setToolTip("Select a row, click this, then press the Cyborg button.")
+        self.btn_capture.setToolTip("Select a pad, then record a key or controller button. Click again to cancel.")
         self.btn_capture.toggled.connect(self._toggle_capture)
         btn_add = QPushButton("Add pad")
         btn_add.clicked.connect(self._add_pad)
         btn_del = self.btn_remove_pad = QPushButton("Remove")
         btn_del.setObjectName("quiet")
         btn_del.clicked.connect(self._remove_pad)
-        row.addWidget(self.btn_capture, 1)
+        row.addWidget(self.btn_capture)
+        row.addStretch(1)
         row.addWidget(btn_add)
         row.addWidget(btn_del)
         l1.addLayout(row)
+        self.selection_hint = muted("Select a pad below to record its input.")
+        l1.addWidget(self.selection_hint)
+        l1.addWidget(self.table)
+        self.no_keys = muted("No matching pads. Try another search or add a pad.")
+        l1.addWidget(self.no_keys)
+        self.show_geometry = QCheckBox("Edit position && size")
+        self.show_geometry.setToolTip("Show position and dimensions in key units.")
+        self.show_geometry.toggled.connect(self._show_key_geometry)
+        l1.addWidget(self.show_geometry)
+        self._show_key_geometry(False)
         self.table.itemSelectionChanged.connect(self._pad_selection_changed)
 
         c2, l2 = card()
         l2.addWidget(section("Sticks & d-pads"))
-        l2.addWidget(muted("Directions take a key name (W) or controller input (gp:dpup). "
-                           "Axes (gp:leftx, gp:lefty) move the knob; Click lights it."))
+        l2.addWidget(muted("Add a keyboard stick, analog stick, or d-pad. Double-click a direction to change its input."))
         self.stick_table = QTableWidget(0, 9)
         self.stick_table.setHorizontalHeaderLabels(["Label", "Up", "Down", "Left", "Right", "Col", "Row", "W", "H"])
         sh = self.stick_table.horizontalHeader()
@@ -619,7 +689,8 @@ class SettingsWindow(QWidget):
         self.joy_edits = {}  # kept for older callers; sticks are edited in the table now
         self._fill_sticks()
         self._fill_table()
-        return self._page("Keys & inputs", "Map your buttons, capture inputs, and arrange every pad.", c1, c2)
+        return self._page("Keys & inputs", "Choose a pad. Record an input. Make it yours.", c1,
+                          disclosure("Sticks & d-pads", c2))
 
     def _appearance_page(self):
         c0, l0 = card()
@@ -699,6 +770,13 @@ class SettingsWindow(QWidget):
         self.lbl_opacity.setText(f"{val}%")
         self._set("opacity", val / 100)
 
+    def _sync_scale(self, value):
+        percent = round(value * 100)
+        self.sl_scale.blockSignals(True)
+        self.sl_scale.setValue(percent)
+        self.sl_scale.blockSignals(False)
+        self.lbl_scale.setText(f"{percent}%")
+
     def _hotkey(self, name, le):
         try:
             vks_for_label(le.text())
@@ -711,7 +789,9 @@ class SettingsWindow(QWidget):
 
     def _toggle_move(self, on):
         self.overlay.set_edit_mode(on)
-        self.btn_move.setText("Done" if on else "Move / resize with mouse")
+        self.btn_move.setText("Done editing" if on else "Edit on screen")
+        self.move_help.setText("Drag to move · Scroll to resize · Click a pad to rebind · Right-click to clear"
+                               if on else "Drag to reposition. Scroll to resize. Choose Done editing when you’re finished.")
         if on:
             self.overlay.show()
             self.chk_visible.setChecked(True)
@@ -727,6 +807,10 @@ class SettingsWindow(QWidget):
         self._schedule_save()
 
     # keys table
+    def _show_key_geometry(self, visible):
+        for column in range(2, 6):
+            self.table.setColumnHidden(column, not visible)
+
     def _filter_keys(self, text=None):
         query = self.key_search.text().strip().casefold()
         visible = 0
@@ -735,6 +819,8 @@ class SettingsWindow(QWidget):
             self.table.setRowHidden(row, not match)
             visible += int(match)
         self.key_count.setText(f"{visible} / {self.table.rowCount()} pads")
+        self.no_keys.setVisible(visible == 0)
+        self.table.setVisible(visible > 0)
         if self.table.currentRow() >= 0 and self.table.isRowHidden(self.table.currentRow()):
             self.table.clearSelection()
         self._pad_selection_changed()
@@ -743,6 +829,11 @@ class SettingsWindow(QWidget):
         selected = bool(self.table.selectionModel().selectedRows())
         self.btn_capture.setEnabled(selected)
         self.btn_remove_pad.setEnabled(selected)
+        if selected:
+            label = self.cfg["keys"][self.table.currentRow()].get("label") or "Untitled pad"
+            self.selection_hint.setText(f"Selected: {label}")
+        else:
+            self.selection_hint.setText("Select a pad below to record its input.")
         if not selected:
             self.btn_capture.setChecked(False)
 
@@ -850,7 +941,11 @@ class SettingsWindow(QWidget):
             self._flash("Select a pad row first")
             return
         self.overlay.capturing = on
-        self.btn_capture.setText("Listening… press a key or button" if on else "Capture key for selected pad")
+        self.btn_capture.setText("Cancel recording" if on else "Record input")
+        if on:
+            self.selection_hint.setText("Listening… press a key or controller button to assign it.")
+        else:
+            self._pad_selection_changed()
 
     def _on_key_captured(self, token):
         self.btn_capture.setChecked(False)
@@ -981,9 +1076,11 @@ class SettingsWindow(QWidget):
         current = self.cfg.get("profile", "")
         i = self.profile_combo.findText(current) if current else 0
         self.profile_combo.setCurrentIndex(max(0, i))
+        self.delete_layout_action.setEnabled(self.profile_combo.currentIndex() > 0)
         self.profile_combo.blockSignals(False)
 
     def _profile_selected(self, index):
+        self.delete_layout_action.setEnabled(index > 0)
         if index == 0:
             return
         self.profile_combo.setCurrentIndex(index)
@@ -1054,5 +1151,5 @@ class SettingsWindow(QWidget):
 
     def _flash(self, text):
         self.status.setText(text)
-        QTimer.singleShot(2500, lambda: self.status.setText("Changes apply live · Settings autosaved")
+        QTimer.singleShot(2500, lambda: self.status.setText("Working settings autosaved")
                           if self.status.text() == text else None)

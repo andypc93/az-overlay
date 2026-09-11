@@ -72,3 +72,31 @@ def test_close_flushes_pending_save(editor, monkeypatch):
     editor.close()
     assert saved == [1234]
     assert not editor.save_timer.isActive()
+
+
+def test_size_controls_stay_in_sync_after_overlay_resize(editor):
+    editor.sl_scale.setValue(125)
+    assert editor.cfg["scale"] == 1.25
+    assert editor.sp_scale.value() == 1.25
+    editor.cfg["scale"] = 0.75
+    editor.overlay.config_changed.emit()
+    assert editor.sl_scale.value() == 75
+    assert editor.lbl_scale.text() == "75%"
+
+
+def test_switching_pages_cancels_input_recording(editor):
+    editor.nav.setCurrentRow(1)
+    editor.table.selectRow(0)
+    editor.btn_capture.setChecked(True)
+    editor.nav.setCurrentRow(2)
+    assert not editor.overlay.capturing
+    assert not editor.btn_capture.isChecked()
+
+
+def test_geometry_can_be_revealed_without_changing_mapping(editor):
+    original = [dict(pad) for pad in editor.cfg["keys"]]
+    assert editor.table.isColumnHidden(2)
+    editor.show_geometry.setChecked(True)
+    assert all(not editor.table.isColumnHidden(c) for c in range(6))
+    editor.show_geometry.setChecked(False)
+    assert editor.cfg["keys"] == original
