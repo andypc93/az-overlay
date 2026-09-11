@@ -64,7 +64,7 @@ def ensure_user_data():
                 break
 
 
-# What a saved layout profile carries (hotkeys stay global in config.json).
+# What a saved layout profile carries (hotkeys and app theme stay global).
 PROFILE_KEYS = ("x", "y", "scale", "opacity", "cell_w", "cell_h", "gap", "shape",
                 "colors", "font", "keys", "sticks")
 
@@ -279,6 +279,8 @@ def load_config():
     with open(CONFIG_PATH, encoding="utf-8") as f:
         cfg = json.load(f)
     migrate(cfg)
+    if cfg.get("theme") not in ("dark", "light"):
+        cfg["theme"] = "dark"
     cfg.setdefault("hotkeys", {})
     cfg["hotkeys"].setdefault("toggle", "O")
     cfg["hotkeys"].setdefault("settings", "S")

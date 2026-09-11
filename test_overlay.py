@@ -6,6 +6,14 @@ import pytest
 import overlay
 
 
+@pytest.mark.parametrize("theme", [None, "unsupported", "light", "dark"])
+def test_config_theme_default_and_validation(theme, tmp_path, monkeypatch):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({} if theme is None else {"theme": theme}), encoding="utf-8")
+    monkeypatch.setattr(overlay, "CONFIG_PATH", str(path))
+    assert overlay.load_config()["theme"] == ("light" if theme == "light" else "dark")
+
+
 def test_letters_and_digits_map_to_vk():
     assert overlay.vks_for_label("Q") == {0x51}
     assert overlay.vks_for_label("9") == {0x39}

@@ -1,7 +1,10 @@
 """Settings interactions without keyboard hooks or writes to user settings."""
 
+from copy import deepcopy
+
 import pytest
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication, QWidget
 
 import overlay
@@ -30,8 +33,10 @@ class PreviewOverlay(QWidget):
 @pytest.fixture
 def editor(monkeypatch):
     app = QApplication.instance() or QApplication([])
+    app.setStyle("Fusion")
     monkeypatch.setattr(settings_ui, "save_config", lambda cfg: None)
     source = PreviewOverlay()
+    source.cfg["theme"] = "dark"
     window = settings_ui.SettingsWindow(source)
     yield window
     window.close()
@@ -100,3 +105,58 @@ def test_geometry_can_be_revealed_without_changing_mapping(editor):
     assert all(not editor.table.isColumnHidden(c) for c in range(6))
     editor.show_geometry.setChecked(False)
     assert editor.cfg["keys"] == original
+
+
+def test_theme_switch_preserves_layout_and_table_state(editor):
+    editor.cfg["keys"][0]["sc"] = 0x1e
+    editor.cfg["keys"][0].pop("input", None)
+    editor._fill_table()
+    original = deepcopy(editor.cfg)
+    editor.nav.setCurrentRow(1)
+    editor.table.selectRow(0)
+    editor.key_search.setText(editor.table.item(0, 0).text())
+    for theme in ("light", "dark"):
+        editor.theme_combo.setCurrentIndex(editor.theme_combo.findData(theme))
+        colors = settings_ui.THEMES[theme]
+        assert editor.palette().color(QPalette.ColorRole.Window) == QColor(colors["bg"])
+        assert editor.table.item(0, 1).foreground().color() == QColor(colors["muted"])
+        assert editor.table.currentRow() == 0
+        assert editor.key_search.text() == editor.table.item(0, 0).text()
+        assert editor.nav.currentRow() == 1
+        assert editor.save_timer.isActive()
+        assert {k: v for k, v in editor.cfg.items() if k != "theme"} == {
+            k: v for k, v in original.items() if k != "theme"
+        }
+
+
+def test_light_theme_survives_save_and_restart(editor, monkeypatch, tmp_path):
+    monkeypatch.setattr(overlay, "CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setattr(settings_ui, "save_config", overlay.save_config)
+    editor.theme_combo.setCurrentIndex(editor.theme_combo.findData("light"))
+    editor.close()
+    source = PreviewOverlay()
+    reopened = settings_ui.SettingsWindow(source)
+    try:
+        assert reopened.cfg["theme"] == "light"
+        assert reopened.theme_combo.currentData() == "light"
+        assert reopened.palette().color(QPalette.ColorRole.Window).lightness() > 230
+        dialog = settings_ui.TemplateDialog(reopened)
+        assert dialog.palette().color(QPalette.ColorRole.Window) == reopened.palette().color(QPalette.ColorRole.Window)
+        dialog.deleteLater()
+    finally:
+        reopened.close()
+        reopened.deleteLater()
+        source.deleteLater()
+
+
+def test_loading_layout_keeps_app_theme(editor, monkeypatch):
+    editor.theme_combo.setCurrentIndex(editor.theme_combo.findData("light"))
+    profile = deepcopy(editor.cfg)
+    profile["theme"] = "dark"
+    profile["x"] = 987
+    monkeypatch.setattr(settings_ui, "load_profile", lambda name: profile)
+    editor.profile_combo.addItem("Test layout")
+    editor._profile_selected(editor.profile_combo.count() - 1)
+    assert editor.cfg["x"] == 987
+    assert editor.cfg["theme"] == "light"
+    assert editor.theme_combo.currentData() == "light"

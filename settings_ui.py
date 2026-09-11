@@ -3,8 +3,8 @@
 import os
 import tempfile
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
-from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPalette, QPen, QPixmap, QPolygonF
+from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, Property
+from PySide6.QtGui import QBrush, QColor, QFont, QIcon, QLinearGradient, QPainter, QPalette, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QAbstractItemView, QAbstractSpinBox, QCheckBox, QColorDialog, QComboBox, QDialog,
     QDialogButtonBox, QDoubleSpinBox, QFontComboBox, QFormLayout, QFrame, QGridLayout,
@@ -19,116 +19,247 @@ from overlay import (APP_NAME, DEFAULT_COLORS, GAMEPAD_LABELS, PROFILE_KEYS, del
                      label_for_token, list_profiles, load_profile, migrate, pad_inputs, parse_input,
                      save_config, save_profile, vks_for_label)
 
-# Palette: graphite surfaces, one accent (the overlay's own yellow-green), used sparingly.
-BG = "#17181b"
-CARD = "#1f2126"
-FIELD = "#26282e"
-LINE = "#2e3138"
-TEXT = "#e6e7ea"
-MUTED = "#8b8f98"
-ACCENT = "#c9d400"
+# Theme colors belong to the editor; overlay colors remain part of each layout.
+THEMES = {
+    "dark": {
+        "bg": "#141416", "card": "#232326", "field": "#303034",
+        "line": "#38383d", "text": "#f5f5f7", "muted": "#a1a1aa",
+        "accent": "#0a84ff", "accent_text": "#ffffff", "accent_hover": "#339aff",
+        "hover": "#3a3a40", "pressed": "#45454c", "strong_line": "#686870",
+        "disabled": "#73737d", "badge_bg": "#18372a", "badge_line": "#18372a",
+        "badge_text": "#6cdd97", "selection": "#203d61", "sidebar": "#1c1c1f",
+        "preview": "#1b1b1e", "preview_end": "#292b33",
+    },
+    "light": {
+        "bg": "#f2f2f7", "card": "#ffffff", "field": "#f0f0f5",
+        "line": "#e3e3eb", "text": "#1c1c1e", "muted": "#6c6c76",
+        "accent": "#007aff", "accent_text": "#ffffff", "accent_hover": "#0068db",
+        "hover": "#e8e8f0", "pressed": "#dddde7", "strong_line": "#aaaab5",
+        "disabled": "#90909a", "badge_bg": "#e8f7ed", "badge_line": "#e8f7ed",
+        "badge_text": "#21834b", "selection": "#e4efff", "sidebar": "#eaeaF1",
+        "preview": "#f4f6fc", "preview_end": "#e9eef9",
+    },
+}
 
 
-def dark_palette():
-    """Fusion draws arrows, checkmarks etc. from the palette, so make it dark."""
+def theme_colors(cfg):
+    return THEMES["light" if cfg.get("theme") == "light" else "dark"]
+
+
+def theme_palette(theme="dark"):
+    """Give native Fusion controls and dialogs the same colors as the stylesheet."""
+    t = THEMES[theme]
     pal = QPalette()
-    for role, col in (
-        (QPalette.ColorRole.Window, BG), (QPalette.ColorRole.WindowText, TEXT),
-        (QPalette.ColorRole.Base, FIELD), (QPalette.ColorRole.AlternateBase, CARD),
-        (QPalette.ColorRole.Text, TEXT), (QPalette.ColorRole.Button, FIELD),
-        (QPalette.ColorRole.ButtonText, TEXT), (QPalette.ColorRole.Highlight, ACCENT),
-        (QPalette.ColorRole.HighlightedText, "#000000"), (QPalette.ColorRole.ToolTipBase, CARD),
-        (QPalette.ColorRole.ToolTipText, TEXT), (QPalette.ColorRole.PlaceholderText, MUTED),
+    for role, key in (
+        (QPalette.ColorRole.Window, "bg"), (QPalette.ColorRole.WindowText, "text"),
+        (QPalette.ColorRole.Base, "field"), (QPalette.ColorRole.AlternateBase, "card"),
+        (QPalette.ColorRole.Text, "text"), (QPalette.ColorRole.Button, "field"),
+        (QPalette.ColorRole.ButtonText, "text"), (QPalette.ColorRole.Highlight, "accent"),
+        (QPalette.ColorRole.HighlightedText, "accent_text"), (QPalette.ColorRole.ToolTipBase, "card"),
+        (QPalette.ColorRole.ToolTipText, "text"), (QPalette.ColorRole.PlaceholderText, "muted"),
+        (QPalette.ColorRole.Light, "card"), (QPalette.ColorRole.Midlight, "field"),
+        (QPalette.ColorRole.Mid, "strong_line"), (QPalette.ColorRole.Dark, "line"),
+        (QPalette.ColorRole.Shadow, "strong_line"),
     ):
-        pal.setColor(role, QColor(col))
-    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor("#5c6068"))
-    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor("#5c6068"))
+        pal.setColor(role, QColor(t[key]))
+    for role in (QPalette.ColorRole.Text, QPalette.ColorRole.ButtonText, QPalette.ColorRole.WindowText):
+        pal.setColor(QPalette.ColorGroup.Disabled, role, QColor(t["disabled"]))
     return pal
 
 
-def _arrow_icon():
+def _arrow_icon(color):
     """Qt stylesheets can't draw arrows in a chosen color; ship a tiny PNG instead."""
-    path = os.path.join(tempfile.gettempdir(), "az-overlay-arrow.png")
+    path = os.path.join(tempfile.gettempdir(), f"az-overlay-arrow-{color.lstrip('#')}.png")
     if not os.path.exists(path):
         pm = QPixmap(20, 20)
         pm.fill(Qt.GlobalColor.transparent)
         p = QPainter(pm)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(TEXT))
+        p.setBrush(QColor(color))
         p.drawPolygon(QPolygonF([QPointF(4, 7), QPointF(16, 7), QPointF(10, 13)]))
         p.end()
         pm.save(path)
     return path.replace("\\", "/")
 
 
-def style():
+def style(theme="dark"):
     """Stylesheet, built at runtime (needs a QApplication for the arrow icon)."""
-    ARROW = _arrow_icon()
+    t = THEMES[theme]
+    ARROW = _arrow_icon(t["text"])
     return f"""
-QWidget {{ background: {BG}; color: {TEXT}; font-family: 'Segoe UI'; font-size: 10pt; }}
-QLabel {{ background: transparent; }}
-QWidget#inline {{ background: transparent; }}
-QLabel#muted {{ color: {MUTED}; }}
-QLabel#section {{ color: {MUTED}; font-size: 8.5pt; font-weight: 600; letter-spacing: 1px; }}
-QLabel#brand {{ font-family: 'Segoe UI Variable Display', 'Segoe UI'; font-size: 17pt; font-weight: 700; }}
-QLabel#pageTitle {{ font-size: 22pt; font-weight: 600; }}
-QLabel#badge {{ color: {ACCENT}; background: #2b301c; border: 1px solid #424925; border-radius: 10px; padding: 4px 10px; font-size: 8pt; font-weight: 600; }}
-QFrame#header {{ background: {CARD}; border-bottom: 1px solid {LINE}; }}
-QFrame#footer {{ background: {CARD}; border-top: 1px solid {LINE}; }}
-QFrame#card {{ background: {CARD}; border: 1px solid {LINE}; border-radius: 8px; }}
-QFrame#card QLabel, QFrame#card QCheckBox {{ background: transparent; }}
-QListWidget#nav {{ background: {BG}; border: none; border-right: 1px solid {LINE}; outline: 0; padding: 8px 0; }}
-QListWidget#nav::item {{ padding: 14px 16px; margin: 3px 10px; border-radius: 6px; color: {MUTED}; }}
-QListWidget#nav::item:hover {{ background: {CARD}; color: {TEXT}; }}
-QListWidget#nav::item:selected {{ background: {CARD}; color: {TEXT}; border-left: 3px solid {ACCENT}; padding-left: 13px; }}
+QWidget {{ background: {t["bg"]}; color: {t["text"]}; font-family: 'Segoe UI'; font-size: 10pt; }}
+QLabel, QCheckBox, QWidget#inline {{ background: transparent; }}
+QLabel#muted {{ color: {t["muted"]}; }}
+QLabel#section {{ color: {t["muted"]}; font-size: 8pt; font-weight: 600; letter-spacing: 1.2px; }}
+QLabel#brand {{ font-size: 17pt; font-weight: 700; letter-spacing: -0.5px; }}
+QLabel#pageTitle {{ font-size: 27pt; font-weight: 700; letter-spacing: -1px; }}
+QLabel#badge {{ color: {t["badge_text"]}; background: {t["badge_bg"]}; border-radius: 11px; padding: 5px 11px; font-size: 8pt; font-weight: 600; }}
+QLabel#value {{ color: {t["accent"]}; background: {t["selection"]}; border-radius: 8px; padding: 4px 8px; font-weight: 600; }}
+QFrame#header, QFrame#footer {{ background: {t["card"]}; }}
+QFrame#header {{ border-bottom: 1px solid {t["line"]}; }}
+QFrame#footer {{ border-top: 1px solid {t["line"]}; }}
+QFrame#card {{ background: {t["card"]}; border: 1px solid {t["line"]}; border-radius: 18px; }}
+QWidget#sidebar {{ background: {t["sidebar"]}; border-right: 1px solid {t["line"]}; }}
+QListWidget#nav {{ background: transparent; border: none; outline: 0; }}
+QListWidget#nav::item {{ padding: 10px; margin: 3px 0; border-radius: 10px; color: {t["muted"]}; }}
+QListWidget#nav::item:hover {{ background: {t["hover"]}; color: {t["text"]}; }}
+QListWidget#nav::item:selected {{ background: {t["card"]}; color: {t["text"]}; font-weight: 600; }}
 QScrollArea {{ border: none; }}
-QPushButton {{ background: {FIELD}; border: 1px solid {LINE}; border-radius: 6px; padding: 6px 14px; }}
-QPushButton:hover {{ border-color: #4a4e58; background: #2c2f36; }}
-QPushButton:pressed {{ background: #22242a; }}
-QPushButton:focus {{ border-color: {ACCENT}; }}
-QPushButton:disabled {{ color: #646975; background: {CARD}; border-color: {LINE}; }}
-QPushButton:checked {{ background: {ACCENT}; color: #000; border-color: {ACCENT}; }}
-QPushButton#primary {{ background: {ACCENT}; color: #000; border-color: {ACCENT}; font-weight: 600; }}
-QPushButton#primary:hover {{ background: #d9e41a; }}
-QPushButton#primary:disabled {{ background: {FIELD}; color: {MUTED}; border-color: {LINE}; }}
-QPushButton#quiet {{ background: transparent; border-color: transparent; color: {MUTED}; }}
-QPushButton#quiet:hover {{ color: {TEXT}; background: {FIELD}; }}
-QPushButton#disclosure {{ text-align: left; background: transparent; border: none; color: {MUTED}; padding: 8px 0; }}
-QPushButton#disclosure:hover {{ color: {TEXT}; }}
-QPushButton#disclosure:checked {{ color: {TEXT}; background: transparent; }}
-QMenu {{ background: {CARD}; border: 1px solid {LINE}; padding: 6px; }}
-QMenu::item {{ padding: 8px 18px; border-radius: 4px; }}
-QMenu::item:selected {{ background: {FIELD}; }}
-QMenu::item:disabled {{ color: {MUTED}; }}
-QPushButton#step {{ font-size: 13pt; padding: 0; min-width: 32px; max-width: 32px; min-height: 30px; max-height: 30px; }}
+QPushButton {{ background: {t["field"]}; border: 1px solid transparent; border-radius: 10px; padding: 8px 15px; font-weight: 600; }}
+QPushButton:hover {{ background: {t["hover"]}; }}
+QPushButton:pressed {{ background: {t["pressed"]}; }}
+QPushButton:focus {{ border-color: {t["accent"]}; }}
+QPushButton:disabled {{ color: {t["disabled"]}; background: {t["field"]}; }}
+QPushButton:checked {{ background: {t["selection"]}; color: {t["accent"]}; }}
+QPushButton#primary {{ background: {t["accent"]}; color: {t["accent_text"]}; }}
+QPushButton#primary:hover {{ background: {t["accent_hover"]}; }}
+QPushButton#primary:pressed {{ background: {t["accent_hover"]}; border-color: {t["accent_text"]}; }}
+QPushButton#primary:disabled {{ background: {t["field"]}; color: {t["disabled"]}; }}
+QPushButton#quiet {{ background: transparent; color: {t["accent"]}; font-weight: 400; }}
+QPushButton#quiet:hover {{ background: {t["selection"]}; }}
+QPushButton#quiet:disabled {{ color: {t["disabled"]}; }}
+QPushButton#disclosure {{ text-align: left; background: {t["card"]}; border: 1px solid {t["line"]}; border-radius: 12px; color: {t["text"]}; padding: 12px 16px; font-weight: 400; }}
+QPushButton#disclosure:hover {{ background: {t["hover"]}; }}
+QPushButton#disclosure:checked {{ color: {t["accent"]}; }}
+QPushButton#disclosure:focus {{ border-color: {t["accent"]}; }}
+QMenu {{ background: {t["card"]}; border: 1px solid {t["line"]}; border-radius: 12px; padding: 6px; }}
+QMenu::item {{ padding: 10px 20px; border-radius: 7px; }}
+QMenu::item:selected {{ background: {t["selection"]}; color: {t["accent"]}; }}
+QMenu::item:disabled {{ color: {t["disabled"]}; }}
+QPushButton#step {{ color: {t["accent"]}; font-size: 15pt; font-weight: 400; padding: 0; min-width: 36px; max-width: 36px; min-height: 34px; max-height: 34px; }}
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QFontComboBox {{
-    background: {FIELD}; border: 1px solid {LINE}; border-radius: 6px; padding: 5px 8px; min-height: 20px; }}
-QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{ border-color: {ACCENT}; }}
+    background: {t["field"]}; border: 1px solid transparent; border-radius: 9px; padding: 7px 10px; min-height: 20px; }}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{ border-color: {t["accent"]}; }}
+QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled {{ color: {t["disabled"]}; }}
+QComboBox {{ padding-right: 28px; }}
 QComboBox::drop-down {{ border: none; width: 26px; subcontrol-origin: padding; subcontrol-position: center right; }}
 QComboBox::down-arrow {{ image: url({ARROW}); width: 10px; height: 10px; }}
-QLineEdit, QSpinBox, QDoubleSpinBox {{ selection-background-color: {ACCENT}; selection-color: #000; }}
-QComboBox QAbstractItemView {{ background: {CARD}; border: 1px solid {LINE}; selection-background-color: {FIELD}; selection-color: {TEXT}; }}
-QTableWidget {{ background: {FIELD}; alternate-background-color: {CARD}; gridline-color: {LINE}; border: 1px solid {LINE}; border-radius: 6px; selection-background-color: #3a3d14; selection-color: {TEXT}; }}
-QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {LINE}; }}
-QTableWidget::item:selected {{ background: #363d24; color: {TEXT}; }}
-QHeaderView::section {{ background: {CARD}; color: {MUTED}; padding: 6px; border: none; border-bottom: 1px solid {LINE}; font-size: 8.5pt; font-weight: 600; }}
-QSlider {{ min-height: 26px; background: transparent; }}
-QSlider::groove:horizontal {{ height: 4px; background: {LINE}; border-radius: 2px; }}
-QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}
-QSlider::handle:horizontal {{ width: 14px; margin: -6px 0; background: {TEXT}; border-radius: 7px; }}
-QCheckBox {{ spacing: 8px; }}
-QCheckBox::indicator {{ width: 16px; height: 16px; border: 1px solid #4a4e58; border-radius: 4px; background: {FIELD}; }}
-QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; }}
-QToolTip {{ background: {CARD}; color: {TEXT}; border: 1px solid {LINE}; padding: 4px; }}
-QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
-QScrollBar::handle:vertical {{ background: {LINE}; border-radius: 5px; min-height: 30px; }}
+QLineEdit, QSpinBox, QDoubleSpinBox {{ selection-background-color: {t["accent"]}; selection-color: {t["accent_text"]}; }}
+QComboBox QAbstractItemView {{ background: {t["card"]}; border: 1px solid {t["line"]}; selection-background-color: {t["selection"]}; selection-color: {t["text"]}; padding: 5px; outline: none; }}
+QTableWidget {{ background: {t["card"]}; alternate-background-color: {t["field"]}; gridline-color: {t["line"]}; border: none; selection-background-color: {t["selection"]}; selection-color: {t["text"]}; outline: none; }}
+QTableWidget::item {{ padding: 8px; border-bottom: 1px solid {t["line"]}; }}
+QTableWidget::item:selected {{ background: {t["selection"]}; color: {t["text"]}; }}
+QHeaderView::section {{ background: {t["card"]}; color: {t["muted"]}; padding: 8px; border: none; border-bottom: 1px solid {t["line"]}; font-size: 8pt; font-weight: 600; }}
+QSlider {{ min-height: 32px; background: transparent; }}
+QSlider::groove:horizontal {{ height: 5px; background: {t["line"]}; border-radius: 2px; }}
+QSlider::sub-page:horizontal {{ background: {t["accent"]}; border-radius: 2px; }}
+QSlider::handle:horizontal {{ width: 23px; margin: -10px 0; background: #ffffff; border: 1px solid {t["line"]}; border-radius: 12px; }}
+QSlider::handle:horizontal:hover, QSlider::handle:horizontal:focus {{ border-color: {t["accent"]}; }}
+QToolTip {{ background: {t["card"]}; color: {t["text"]}; border: 1px solid {t["line"]}; padding: 6px; }}
+QScrollBar:vertical {{ background: transparent; width: 8px; margin: 4px 0; }}
+QScrollBar::handle:vertical {{ background: {t["line"]}; border-radius: 4px; min-height: 30px; }}
+QScrollBar::handle:vertical:hover {{ background: {t["strong_line"]}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+
 """
 
 
 
 # ---- small building blocks ------------------------------------------------
+def navigation_icon(name):
+    """Small, resolution-independent tiles drawn with the app's own glyphs."""
+    pm = QPixmap(96, 96)
+    pm.setDevicePixelRatio(3)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    colors = {"Layout": "#007aff", "Keys": "#af52de", "Appearance": "#ff9500", "brand": "#007aff"}
+    p.setPen(Qt.PenStyle.NoPen)
+    gradient = QLinearGradient(0, 0, 32, 32)
+    gradient.setColorAt(0, QColor(colors[name]).lighter(115))
+    gradient.setColorAt(1, QColor(colors[name]))
+    p.setBrush(gradient)
+    p.drawRoundedRect(QRectF(0, 0, 32, 32), 8, 8)
+    p.setPen(QPen(QColor("#ffffff"), 1.6))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    if name == "Layout":
+        p.drawRoundedRect(QRectF(7, 7, 18, 18), 3, 3)
+        p.drawLine(QPointF(13, 7), QPointF(13, 25))
+        p.drawLine(QPointF(13, 15), QPointF(25, 15))
+    elif name == "Keys":
+        for x in (7, 14, 21):
+            for y in (9, 16):
+                p.drawRoundedRect(QRectF(x, y, 4, 4), 1, 1)
+        p.drawLine(QPointF(11, 24), QPointF(21, 24))
+    elif name == "Appearance":
+        for x, y in ((12, 12), (20, 12), (16, 20)):
+            p.drawEllipse(QPointF(x, y), 5, 5)
+    else:
+        p.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        p.drawText(QRectF(0, 0, 32, 32), Qt.AlignmentFlag.AlignCenter, "AZ")
+    p.end()
+    return QIcon(pm)
+
+
+class Switch(QCheckBox):
+    """An animated switch with native checkbox keyboard and accessibility behavior."""
+
+    def __init__(self, text):
+        super().__init__(text)
+        self._position = 0.0
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.animation = QPropertyAnimation(self, b"position", self)
+        self.animation.setDuration(160)
+        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.toggled.connect(self._animate)
+
+    def _get_position(self):
+        return self._position
+
+    def _set_position(self, value):
+        self._position = value
+        self.update()
+
+    position = Property(float, _get_position, _set_position)
+
+    def _animate(self, checked):
+        self.animation.stop()
+        if not self.isVisible():
+            self.position = float(checked)
+            return
+        self.animation.setStartValue(self._position)
+        self.animation.setEndValue(float(checked))
+        self.animation.start()
+
+    def sizeHint(self):
+        return QSize(56 + self.fontMetrics().horizontalAdvance(self.text().replace("&&", "&")), 32)
+
+    def minimumSizeHint(self):
+        return self.sizeHint()
+
+    def hitButton(self, point):
+        return self.rect().contains(point)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        dark = self.palette().color(QPalette.ColorRole.Window).lightness() < 128
+        off = QColor("#48484e" if dark else "#dddde3")
+        on = QColor("#30d158" if dark else "#34c759")
+        t = self._position
+        track_color = QColor(*(round(a + (b - a) * t) for a, b in zip(off.getRgb()[:3], on.getRgb()[:3])))
+        if not self.isEnabled():
+            p.setOpacity(0.45)
+        track = QRectF(2, (self.height() - 24) / 2, 42, 24)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(track_color)
+        p.drawRoundedRect(track, 12, 12)
+        p.setBrush(QColor("#ffffff"))
+        p.drawEllipse(QRectF(track.x() + 2 + 18 * t, track.y() + 2, 20, 20))
+        if self.hasFocus():
+            p.setPen(QPen(self.palette().color(QPalette.ColorRole.Highlight), 1.5))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(track.adjusted(-2, -2, 2, 2), 14, 14)
+        p.setPen(self.palette().color(QPalette.ColorRole.WindowText))
+        p.setFont(self.font())
+        p.drawText(QRectF(56, 0, max(0, self.width() - 56), self.height()),
+                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                   self.text().replace("&&", "&"))
+        p.end()
+
+
 def section(title):
     lbl = QLabel(title.upper())
     lbl.setObjectName("section")
@@ -146,15 +277,15 @@ def card():
     f = QFrame()
     f.setObjectName("card")
     lay = QVBoxLayout(f)
-    lay.setContentsMargins(16, 14, 16, 14)
-    lay.setSpacing(10)
+    lay.setContentsMargins(22, 18, 22, 18)
+    lay.setSpacing(14)
     return f, lay
 
 
 def form():
     f = QFormLayout()
     f.setHorizontalSpacing(16)
-    f.setVerticalSpacing(8)
+    f.setVerticalSpacing(12)
     f.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
     f.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
     return f
@@ -210,17 +341,28 @@ class ColorButton(QPushButton):
     def __init__(self, cfg, key, on_change):
         super().__init__()
         self.cfg, self.key, self.on_change = cfg, key, on_change
-        self.setFixedSize(112, 30)
+        self.setFixedSize(126, 36)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.clicked.connect(self.pick)
         self.refresh()
 
     def refresh(self):
         col = QColor(self.cfg["colors"][self.key])
-        fg = "#000" if col.lightness() > 128 else "#fff"
         self.setText(col.name().upper())
-        self.setStyleSheet(f"background:{col.name()}; color:{fg}; border:1px solid {LINE}; "
-                           f"border-radius:6px; font-family:Consolas,'Segoe UI'; font-size:9.5pt;")
+        self.setAccessibleName(f"{self.key.replace('_', ' ')} color")
+        self.setToolTip(f"Change {self.key.replace('_', ' ')}")
+        swatch = QPixmap(40, 40)
+        swatch.setDevicePixelRatio(2)
+        swatch.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(swatch)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor(theme_colors(self.cfg)["strong_line"]), 0.5))
+        painter.setBrush(col)
+        painter.drawEllipse(QRectF(1, 1, 18, 18))
+        painter.end()
+        self.setIcon(QIcon(swatch))
+        self.setIconSize(QSize(20, 20))
+        self.setStyleSheet("font-family: Consolas, 'Segoe UI'; font-size: 9pt; font-weight: 400;")
 
     def pick(self):
         dlg = QColorDialog(QColor(self.cfg["colors"][self.key]), self)
@@ -247,7 +389,7 @@ class PadPreview(QWidget):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self.setFixedHeight(180)
+        self.setFixedHeight(160)
 
     def paintEvent(self, _e):
         c = {k: QColor(v) for k, v in self.cfg["colors"].items()}
@@ -264,10 +406,13 @@ class PadPreview(QWidget):
         x0 = (self.width() - (2 * w + gap)) / 2
         y0 = (self.height() - h - 18) / 2
         r = 10
-        p.setPen(QPen(QColor(LINE), 1))
-        for x in range(12, self.width(), 20):
-            for y in range(12, self.height(), 20):
-                p.drawPoint(x, y)
+        t = theme_colors(self.cfg)
+        gradient = QLinearGradient(0, 0, self.width(), self.height())
+        gradient.setColorAt(0, QColor(t["preview"]))
+        gradient.setColorAt(1, QColor(t["preview_end"]))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(gradient)
+        p.drawRoundedRect(QRectF(self.rect()), 14, 14)
         for x, state in ((x0, "idle"), (x0 + w + gap, "pressed")):
             rect = QRectF(x, y0, w, h)
             if state == "pressed":
@@ -284,7 +429,7 @@ class PadPreview(QWidget):
             p.setPen(c[f"{state}_text"])
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, "Space")
             p.setFont(QFont("Segoe UI", 8))
-            p.setPen(QColor(MUTED))
+            p.setPen(QColor(theme_colors(self.cfg)["muted"]))
             p.drawText(QRectF(x, y0 + h + 4, w, 16), Qt.AlignmentFlag.AlignCenter, state)
         p.end()
 
@@ -357,9 +502,10 @@ class SettingsWindow(QWidget):
         self.cfg = overlay.cfg
         self.setWindowTitle(APP_NAME)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        self.setPalette(dark_palette())
-        self.setStyleSheet(style())
-        self.resize(1000, 820)
+        theme = "light" if self.cfg.get("theme") == "light" else "dark"
+        self.setPalette(theme_palette(theme))
+        self.setStyleSheet(style(theme))
+        self.resize(1040, 860)
         self.setMinimumSize(820, 580)
         self._loading = False
 
@@ -378,14 +524,24 @@ class SettingsWindow(QWidget):
         body.setSpacing(0)
         self.nav = QListWidget()
         self.nav.setObjectName("nav")
-        self.nav.setFixedWidth(165)
+        self.nav.setIconSize(QSize(28, 28))
+        self.nav.setSpacing(2)
         self.nav.setAccessibleName("Settings pages")
         self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         for name in self.PAGES:
-            QListWidgetItem(name, self.nav)
+            QListWidgetItem(navigation_icon(name), name, self.nav)
         self.stack = QStackedWidget()
         self.nav.currentRowChanged.connect(self._page_changed)
-        body.addWidget(self.nav)
+        sidebar = QWidget()
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(184)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(12, 28, 12, 20)
+        sidebar_layout.setSpacing(12)
+        sidebar_layout.addWidget(section("Workspace"))
+        sidebar_layout.addWidget(self.nav, 1)
+        sidebar_layout.addWidget(muted("Your setup,\njust the way you like it."))
+        body.addWidget(sidebar)
         body.addWidget(self.stack, 1)
         root.addLayout(body, 1)
         root.addWidget(self._footer())
@@ -401,7 +557,7 @@ class SettingsWindow(QWidget):
         f = QFrame()
         f.setObjectName("header")
         header = QVBoxLayout(f)
-        header.setContentsMargins(24, 18, 24, 16)
+        header.setContentsMargins(26, 20, 26, 18)
         header.setSpacing(18)
         title = QHBoxLayout()
         wordmark = QVBoxLayout()
@@ -414,9 +570,27 @@ class SettingsWindow(QWidget):
         tagline = muted("Your inputs. Your layout.")
         tagline.setWordWrap(False)
         wordmark.addWidget(tagline)
+        app_icon = QLabel()
+        app_icon.setPixmap(navigation_icon("brand").pixmap(QSize(44, 44)))
+        app_icon.setFixedSize(44, 44)
+        title.addWidget(app_icon)
+        title.addSpacing(4)
         title.addLayout(wordmark)
         title.addStretch(1)
-        badge = QLabel("LIVE EDITOR")
+        theme_label = QLabel("Theme")
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItem("Dark", "dark")
+        self.theme_combo.addItem("Light", "light")
+        self.theme_combo.setCurrentIndex(1 if self.cfg.get("theme") == "light" else 0)
+        self.theme_combo.setMinimumWidth(100)
+        self.theme_combo.setAccessibleName("App theme")
+        self.theme_combo.setToolTip("Choose the settings window's appearance")
+        theme_label.setBuddy(self.theme_combo)
+        self.theme_combo.currentIndexChanged.connect(self._theme_changed)
+        title.addWidget(theme_label)
+        title.addWidget(self.theme_combo)
+        title.addSpacing(12)
+        badge = QLabel("?  Live editor")
         badge.setObjectName("badge")
         title.addWidget(badge, 0, Qt.AlignmentFlag.AlignVCenter)
         header.addLayout(title)
@@ -455,7 +629,7 @@ class SettingsWindow(QWidget):
         h.setContentsMargins(20, 10, 20, 10)
         self.status = muted("Working settings autosaved")
         h.addWidget(self.status, 1)
-        self.chk_visible = QCheckBox("Overlay visible")
+        self.chk_visible = Switch("Overlay visible")
         self.chk_visible.setChecked(self.overlay.isVisible())
         self.chk_visible.toggled.connect(self.overlay.setVisible)
         h.addWidget(self.chk_visible)
@@ -469,8 +643,8 @@ class SettingsWindow(QWidget):
         """Scrollable page holding a column of cards."""
         inner = QWidget()
         v = QVBoxLayout(inner)
-        v.setContentsMargins(24, 20, 24, 20)
-        v.setSpacing(14)
+        v.setContentsMargins(28, 24, 28, 24)
+        v.setSpacing(16)
         heading = QLabel(title)
         heading.setObjectName("pageTitle")
         v.addWidget(heading)
@@ -514,9 +688,10 @@ class SettingsWindow(QWidget):
         self.btn_move = QPushButton("Edit on screen")
         self.btn_move.setObjectName("primary")
         self.btn_move.setCheckable(True)
-        self.btn_move.setMinimumHeight(36)
+        self.btn_move.setMinimumHeight(38)
+        self.btn_move.setMinimumWidth(156)
         self.btn_move.toggled.connect(self._toggle_move)
-        l1.addWidget(self.btn_move)
+        l1.addWidget(self.btn_move, 0, Qt.AlignmentFlag.AlignLeft)
         self.move_help = muted("Drag to reposition. Scroll to resize. Choose Done editing when you’re finished.")
         l1.addWidget(self.move_help)
         f = form()
@@ -536,7 +711,9 @@ class SettingsWindow(QWidget):
         self.sl_scale.setValue(round(self.sp_scale.value() * 100))
         self.sl_scale.setAccessibleName("Overlay size")
         self.lbl_scale = muted(f"{self.sl_scale.value()}%")
-        self.lbl_scale.setFixedWidth(44)
+        self.lbl_scale.setFixedWidth(68)
+        self.lbl_scale.setObjectName("value")
+        self.lbl_scale.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.sl_scale.valueChanged.connect(lambda value: self.sp_scale.setValue(value / 100))
         self.sp_scale.valueChanged.connect(self._sync_scale)
         scale_row = QHBoxLayout()
@@ -547,7 +724,9 @@ class SettingsWindow(QWidget):
         self.sl_opacity.setAccessibleName("Overlay opacity")
         self.sl_opacity.setValue(int(self.cfg.get("opacity", 0.85) * 100))
         self.lbl_opacity = muted(f"{self.sl_opacity.value()}%")
-        self.lbl_opacity.setFixedWidth(40)
+        self.lbl_opacity.setFixedWidth(68)
+        self.lbl_opacity.setObjectName("value")
+        self.lbl_opacity.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.sl_opacity.valueChanged.connect(self._opacity)
         row = QHBoxLayout(); row.addWidget(self.sl_opacity, 1); row.addWidget(self.lbl_opacity)
         f.addRow("Opacity", row)
@@ -618,8 +797,8 @@ class SettingsWindow(QWidget):
             hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.Fixed)
             self.table.setColumnWidth(c, 56)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(38)
-        self.table.setAlternatingRowColors(True)
+        self.table.verticalHeader().setDefaultSectionSize(42)
+        self.table.setAlternatingRowColors(False)
         self.table.setShowGrid(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -646,7 +825,7 @@ class SettingsWindow(QWidget):
         l1.addWidget(self.table)
         self.no_keys = muted("No matching pads. Try another search or add a pad.")
         l1.addWidget(self.no_keys)
-        self.show_geometry = QCheckBox("Edit position && size")
+        self.show_geometry = Switch("Edit position && size")
         self.show_geometry.setToolTip("Show position and dimensions in key units.")
         self.show_geometry.toggled.connect(self._show_key_geometry)
         l1.addWidget(self.show_geometry)
@@ -708,11 +887,11 @@ class SettingsWindow(QWidget):
         self.sp_font = QSpinBox(); self.sp_font.setRange(4, 72); self.sp_font.setValue(int(fnt["size"]))
         self.sp_font.setSuffix(" pt")
         self.sp_font.valueChanged.connect(lambda v: self._set_font("size", v))
-        self.chk_bold = QCheckBox("Bold"); self.chk_bold.setChecked(bool(fnt["bold"]))
+        self.chk_bold = Switch("Bold"); self.chk_bold.setChecked(bool(fnt["bold"]))
         self.chk_bold.toggled.connect(lambda on: self._set_font("bold", on))
         f.addRow("Font", self.font_combo)
         f.addRow("Size", stepper(self.sp_font))
-        f.addRow("", self.chk_bold)
+        f.addRow("Weight", self.chk_bold)
         l1.addLayout(f)
 
         c2, l2 = card()
@@ -738,6 +917,22 @@ class SettingsWindow(QWidget):
         return self._page("Appearance", "Make it yours. Preview your font and colors as you edit.", c0, c1, c2)
 
     # ---- behaviour ----------------------------------------------------
+    def _theme_changed(self):
+        theme = self.theme_combo.currentData()
+        self.cfg["theme"] = theme
+        self.setPalette(theme_palette(theme))
+        self.setStyleSheet(style(theme))
+        for button in self.color_buttons:
+            button.refresh()
+        # Update custom item brushes without rebuilding the table or losing selection.
+        blocked = self.table.blockSignals(True)
+        for row, pad in enumerate(self.cfg["keys"]):
+            if "sc" in pad and pad.get("input") is None:
+                self.table.item(row, 1).setForeground(QColor(theme_colors(self.cfg)["muted"]))
+        self.table.blockSignals(blocked)
+        self.preview.update()
+        self._schedule_save()
+
     def present(self):
         self.chk_visible.blockSignals(True)
         self.chk_visible.setChecked(self.overlay.isVisible())
@@ -858,7 +1053,7 @@ class SettingsWindow(QWidget):
             self.table.setItem(r, 0, QTableWidgetItem(k["label"]))
             inp = QTableWidgetItem(self._input_text(k))
             if "sc" in k and k.get("input") is None:
-                inp.setForeground(QColor(MUTED))
+                inp.setForeground(QColor(theme_colors(self.cfg)["muted"]))
                 inp.setToolTip("Physical key (scancode). Type a key name to override.")
             self.table.setItem(r, 1, inp)
             for c, key in ((2, "col"), (3, "row"), (4, "w"), (5, "h")):
