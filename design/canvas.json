@@ -1,0 +1,55 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Settings \u00b7 Layout",
+      "x": 0,
+      "y": 0,
+      "w": 1040,
+      "h": 860
+    },
+    {
+      "file": "Keys.dc.html",
+      "title": "Settings \u00b7 Keys",
+      "x": 1140,
+      "y": 0,
+      "w": 1040,
+      "h": 860
+    },
+    {
+      "file": "Appearance.dc.html",
+      "title": "Settings \u00b7 Appearance",
+      "x": 2280,
+      "y": 0,
+      "w": 1040,
+      "h": 860
+    },
+    {
+      "file": "About.dc.html",
+      "title": "Settings \u00b7 About",
+      "x": 0,
+      "y": 1000,
+      "w": 1040,
+      "h": 860
+    },
+    {
+      "file": "Help.dc.html",
+      "title": "Settings \u00b7 Help",
+      "x": 1140,
+      "y": 1000,
+      "w": 1040,
+      "h": 860
+    },
+    {
+      "file": "Overlay.dc.html",
+      "title": "Overlay \u00b7 Cyborg 2 layout",
+      "x": 2280,
+      "y": 1000,
+      "w": 900,
+      "h": 760
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
