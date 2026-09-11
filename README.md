@@ -81,6 +81,10 @@ pad. Enable **Edit position & size** to reveal geometry columns, or expand
 On **Appearance**, adjust the font, size, weight, and colors. The live preview
 shows idle and pressed states, each with its own fill, border, and text color.
 
+Choose **Light** or **Dark** in the **Theme** selector at the top of settings.
+Your choice applies immediately and is remembered across restarts and layout
+changes. It controls the settings window; overlay colors are set separately.
+
 > **Working settings save automatically.** Use **Save layout** to update a named
 > layout with your current edits. **More → Save as new layout…** keeps a separate
 > copy; **More → Delete saved layout…** removes a saved layout.
@@ -135,10 +139,11 @@ your changes.
 | `font` | Family, point size at scale `1.0`, and bold weight |
 | `colors` | Idle and pressed fill, outline, and text colors |
 | `hotkeys` | Final key for each global shortcut |
+| `theme` | Settings window appearance: `dark` (default) or `light` |
 
 Key and stick geometry uses `col`, `row`, `w`, and `h` in key units. Named
-layouts store appearance, geometry, and bindings; keyboard shortcuts remain
-global.
+layouts store appearance, geometry, and bindings; keyboard shortcuts and the
+app theme remain global.
 
 </details>
 
@@ -172,3 +177,7 @@ python -m pytest -q
 - Use **windowed or borderless** display mode. Exclusive fullscreen can hide the overlay.
 - Controller input uses SDL's game-controller mappings. Detection depends on the device and its driver.
 - The app uses global input hooks. Check your game's rules before using it with anti-cheat software.
+
+## License
+
+MIT. Uses PySide6, pynput and pygame-ce (LGPL) as separate libraries.
