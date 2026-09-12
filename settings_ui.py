@@ -1,10 +1,11 @@
-"""Settings window for the overlay. Every edit applies live and autosaves."""
+"""Settings window for the overlay. Edits apply live; named layouts autosave."""
 
 import os
 import tempfile
+from math import ceil
 
-from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, Property
-from PySide6.QtGui import QBrush, QColor, QFont, QIcon, QLinearGradient, QPainter, QPalette, QPen, QPixmap, QPolygonF
+from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QUrl, QUrlQuery, Property, Signal
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QLinearGradient, QPainter, QPalette, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QAbstractItemView, QAbstractSpinBox, QBoxLayout, QCheckBox, QColorDialog, QComboBox, QDialog,
     QDialogButtonBox, QDoubleSpinBox, QFontComboBox, QFormLayout, QFrame, QGridLayout,
@@ -15,10 +16,19 @@ from PySide6.QtWidgets import (
 
 import templates
 from gamepad import is_gamepad_input
-from overlay import (APP_NAME, DEFAULT_COLORS, GAMEPAD_LABELS, PROFILE_KEYS, delete_profile,
-                     KEY_TEXT_FLAGS, fit_key_font, key_text_rect,
+from overlay import (APP_NAME, DEFAULT_COLORS, GAMEPAD_LABELS, PAD_STYLES, PROFILE_KEYS, STICK_STYLES, delete_profile,
+                     KEY_TEXT_FLAGS, draw_pad, fit_key_font, key_text_rect,
                      label_for_token, list_profiles, load_profile, migrate, pad_inputs, parse_input,
                      save_config, save_profile, vks_for_label)
+
+SUPPORT_EMAIL = "andres6perez@gmail.com"
+# Display names for overlay.STICK_STYLES, in the same order.
+STICK_STYLE_NAMES = dict(zip(STICK_STYLES, ("Classic", "Ring gauge", "Petals", "Vector", "Key cross")))
+PAD_STYLE_NAMES = dict(zip(PAD_STYLES, ("Classic", "Outline", "Keycap", "Underline", "Pill")))
+PAD_SHAPES = (("rect", "Rounded"), ("circle", "Circle"))
+# Set these to the creator's payment links to enable donations.
+PAYPAL_DONATION_URL = ""
+VENMO_DONATION_URL = "https://venmo.com/andrespc93"
 
 # Theme colors belong to the editor; overlay colors remain part of each layout.
 THEMES = {
@@ -100,6 +110,10 @@ QFrame#header, QFrame#footer {{ background: {t["card"]}; }}
 QFrame#header {{ border-bottom: 1px solid {t["line"]}; }}
 QFrame#footer {{ border-top: 1px solid {t["line"]}; }}
 QFrame#card {{ background: {t["card"]}; border: 1px solid {t["line"]}; border-radius: 18px; }}
+QFrame#helpContact {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {t["selection"]}, stop:1 {t["card"]}); border: 1px solid {t["badge_text"]}; border-radius: 18px; }}
+QLabel#helpTitle {{ font-size: 20pt; font-weight: 700; letter-spacing: -0.5px; }}
+QLabel#helpStepTitle {{ font-size: 11pt; font-weight: 600; }}
+QLabel#helpNumber {{ color: {t["accent"]}; background: {t["selection"]}; border-radius: 12px; font-size: 11pt; font-weight: 700; }}
 QWidget#sidebar {{ background: {t["sidebar"]}; border-right: 1px solid {t["line"]}; }}
 QListWidget#nav {{ background: transparent; border: none; outline: 0; }}
 QListWidget#nav::item {{ padding: 10px; margin: 3px 0; border-radius: 10px; color: {t["muted"]}; }}
@@ -158,21 +172,22 @@ QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: tran
 
 
 # ---- small building blocks ------------------------------------------------
-def navigation_icon(name):
+def navigation_icon(name, theme="dark"):
     """Small, resolution-independent tiles drawn with the app's own glyphs."""
     pm = QPixmap(96, 96)
     pm.setDevicePixelRatio(3)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    accent = QColor(THEMES["dark"]["accent"])
+    t = THEMES[theme]
+    accent = QColor(t["accent"])
     p.setPen(Qt.PenStyle.NoPen)
     gradient = QLinearGradient(0, 0, 32, 32)
     gradient.setColorAt(0, accent.lighter(115))
     gradient.setColorAt(1, accent)
     p.setBrush(gradient)
     p.drawRoundedRect(QRectF(0, 0, 32, 32), 8, 8)
-    p.setPen(QPen(QColor(THEMES["dark"]["accent_text"]), 1.6))
+    p.setPen(QPen(QColor(t["accent_text"]), 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     if name == "Layout":
         p.drawRoundedRect(QRectF(7, 7, 18, 18), 3, 3)
@@ -186,6 +201,14 @@ def navigation_icon(name):
     elif name == "Appearance":
         for x, y in ((12, 12), (20, 12), (16, 20)):
             p.drawEllipse(QPointF(x, y), 5, 5)
+    elif name in ("About", "Help"):
+        p.drawEllipse(QRectF(6, 6, 20, 20))
+        glyph_font = QFont("Segoe UI", 14)
+        glyph_font.setPixelSize(18)
+        glyph_font.setBold(True)
+        p.setFont(glyph_font)
+        p.drawText(QRectF(6, 5, 20, 21), Qt.AlignmentFlag.AlignCenter,
+                   "i" if name == "About" else "?")
     p.end()
     icon = QIcon(pm)
     icon.addPixmap(pm, QIcon.Mode.Selected)
@@ -372,7 +395,16 @@ class ColorButton(QPushButton):
 
     def pick(self):
         dlg = QColorDialog(QColor(self.cfg["colors"][self.key]), self)
+        # The Windows native picker ignores the editor's palette and stylesheet.
+        dlg.setOption(QColorDialog.ColorDialogOption.DontUseNativeDialog, True)
         dlg.setOption(QColorDialog.ColorDialogOption.ShowAlphaChannel, False)
+        theme = "light" if self.cfg.get("theme") == "light" else "dark"
+        dlg.setWindowTitle(f"Choose {self.key.replace('_', ' ')} color")
+        dlg.setPalette(theme_palette(theme))
+        buttons = dlg.findChild(QDialogButtonBox)
+        if buttons:
+            buttons.button(QDialogButtonBox.StandardButton.Ok).setObjectName("primary")
+        dlg.setStyleSheet(style(theme))
         dlg.currentColorChanged.connect(self._live)
         start = self.cfg["colors"][self.key]
         if dlg.exec():
@@ -381,6 +413,7 @@ class ColorButton(QPushButton):
             self.cfg["colors"][self.key] = start
             self.refresh()
             self.on_change()
+        dlg.deleteLater()
 
     def _live(self, col):
         if col.isValid():
@@ -419,26 +452,92 @@ class PadPreview(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(gradient)
         p.drawRoundedRect(QRectF(self.rect()), 14, 14)
+        shape = "circle" if self.cfg.get("shape") == "circle" else "rect"
+        style = self.cfg.get("pad_style", "classic")
         for x, state in ((x0, "idle"), (x0 + w + gap, "pressed")):
             rect = QRectF(x, y0, w, h)
-            if state == "pressed":
-                glow = QColor(c["pressed_outline"])
-                for i, spread in enumerate((6, 3)):
-                    glow.setAlphaF(0.18 / (i + 1))
-                    p.setPen(QPen(glow, spread * 2))
-                    p.setBrush(Qt.BrushStyle.NoBrush)
-                    p.drawRoundedRect(rect, r, r)
-            p.setBrush(QBrush(c[f"{state}_fill"]))
-            p.setPen(QPen(c[f"{state}_outline"], 1.2 if state == "idle" else 2.2))
-            p.drawRoundedRect(rect, r, r)
-            text_rect = key_text_rect(rect)
+            label_color = draw_pad(p, rect, shape, style, r, c, 1.0 if state == "pressed" else 0.0)
+            text_rect = key_text_rect(rect, shape)
             p.setFont(fit_key_font("Space", font, text_rect, self))
-            p.setPen(c[f"{state}_text"])
+            p.setPen(label_color)
             p.drawText(text_rect, KEY_TEXT_FLAGS, "Space")
             p.setFont(QFont("Segoe UI", 8))
             p.setPen(QColor(theme_colors(self.cfg)["muted"]))
             p.drawText(QRectF(x, y0 + h + 4, w, 16), Qt.AlignmentFlag.AlignCenter, state)
         p.end()
+
+
+class PadLayoutEditor(QWidget):
+    """Fit the complete layout into a clickable view, including unassigned pads."""
+
+    pad_selected = Signal(int)
+
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+        self.selected = -1
+        self.setMinimumHeight(240)
+        self.setAccessibleName("All pads layout")
+        self.setToolTip("Click any pad to select its mapping below. Blank pads show their pad number.")
+
+    def layout_rects(self):
+        gap = self.cfg["gap"]
+        cw, ch = self.cfg["cell_w"] + gap, self.cfg["cell_h"] + gap
+        keys = self.cfg["keys"]
+        entries = keys + self.cfg.get("sticks", [])
+        rects = [QRectF(k["col"] * cw, k["row"] * ch,
+                        k.get("w", 1 if i < len(keys) else 2) * cw - gap,
+                        k.get("h", 1 if i < len(keys) else 2) * ch - gap)
+                 for i, k in enumerate(entries)]
+        if not rects:
+            return []
+        bounds = QRectF(rects[0])
+        for rect in rects[1:]:
+            bounds = bounds.united(rect)
+        ratio = min(max(1, self.width() - 24) / max(1, bounds.width()),
+                    max(1, self.height() - 24) / max(1, bounds.height()))
+        x = (self.width() - bounds.width() * ratio) / 2
+        y = (self.height() - bounds.height() * ratio) / 2
+        return [QRectF(x + (r.x() - bounds.x()) * ratio,
+                       y + (r.y() - bounds.y()) * ratio,
+                       r.width() * ratio, r.height() * ratio) for r in rects]
+
+    def paintEvent(self, event):
+        t = theme_colors(self.cfg)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.fillRect(self.rect(), QColor(t["preview"]))
+        keys = self.cfg["keys"]
+        entries = keys + self.cfg.get("sticks", [])
+        rects = self.layout_rects()
+        for i, (entry, rect) in enumerate(zip(entries, rects)):
+            selected = i < len(keys) and i == self.selected
+            p.setBrush(QColor(t["selection"] if selected else t["field"]))
+            p.setPen(QPen(QColor(t["accent"] if selected else t["strong_line"]), 2 if selected else 1))
+            circle = i >= len(keys) or entry.get("shape", self.cfg.get("shape")) in ("circle", "dot")
+            if circle:
+                p.drawEllipse(rect)
+            else:
+                p.drawRoundedRect(rect, 5, 5)
+            label = entry.get("label") or (f"#{i + 1}" if i < len(keys) else "Stick")
+            text_rect = key_text_rect(rect, "circle" if circle else "rect")
+            p.setFont(fit_key_font(label, QFont("Segoe UI", 10), text_rect, self))
+            p.setPen(QColor(t["accent"] if selected else t["text"]))
+            p.drawText(text_rect, KEY_TEXT_FLAGS, label)
+        if not rects:
+            p.setPen(QColor(t["muted"]))
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Add a pad, row, or column to start.")
+        p.end()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            rects = self.layout_rects()[:len(self.cfg["keys"])]
+            for i in reversed(range(len(rects))):
+                if rects[i].contains(event.position()):
+                    self.pad_selected.emit(i)
+                    event.accept()
+                    return
+        super().mousePressEvent(event)
 
 
 class TemplateDialog(QDialog):
@@ -501,7 +600,7 @@ class TemplateDialog(QDialog):
 
 # ---- the window ------------------------------------------------------------
 class SettingsWindow(QWidget):
-    PAGES = ("Layout", "Keys", "Appearance")
+    PAGES = ("Layout", "Keys", "Appearance", "About", "Help")
 
     def __init__(self, overlay):
         super().__init__()
@@ -536,7 +635,7 @@ class SettingsWindow(QWidget):
         self.nav.setAccessibleName("Settings pages")
         self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         for name in self.PAGES:
-            QListWidgetItem(navigation_icon(name), name, self.nav)
+            QListWidgetItem(navigation_icon(name, theme), name, self.nav)
         self.stack = QStackedWidget()
         self.nav.currentRowChanged.connect(self._page_changed)
         sidebar = QWidget()
@@ -557,6 +656,13 @@ class SettingsWindow(QWidget):
 
         overlay.config_changed.connect(self._sync_from_overlay)
         overlay.key_captured.connect(self._on_key_captured)
+        # Switching to another app (the game) ends on-screen editing. Otherwise the
+        # overlay stays clickable and scroll-resizable and game input drags/resizes it.
+        QGuiApplication.instance().applicationStateChanged.connect(self._app_state_changed)
+
+    def _app_state_changed(self, state):
+        if state != Qt.ApplicationState.ApplicationActive and self.btn_move.isChecked():
+            self.btn_move.setChecked(False)
 
     # ---- chrome -------------------------------------------------------
     def _header(self):
@@ -596,7 +702,7 @@ class SettingsWindow(QWidget):
         self.profile_combo.setAccessibleName("Saved layout")
         h.addWidget(self.profile_combo, 1)
         b_save = QPushButton("Save layout")
-        b_save.setToolTip("Update this saved layout with your current edits. Working settings are autosaved separately.")
+        b_save.setToolTip("Save an unnamed layout. Changes to saved layouts are saved automatically.")
         b_save.clicked.connect(self._profile_save)
         more = QPushButton("More")
         more.setObjectName("quiet")
@@ -653,6 +759,8 @@ class SettingsWindow(QWidget):
         self.stack.addWidget(self._layout_page())
         self.stack.addWidget(self._keys_page())
         self.stack.addWidget(self._appearance_page())
+        self.stack.addWidget(self._about_page())
+        self.stack.addWidget(self._help_page())
         self._adapt_appearance_columns()
 
     def resizeEvent(self, event):
@@ -775,6 +883,14 @@ class SettingsWindow(QWidget):
         l1.addWidget(section("Pads"))
         l1.addWidget(muted("Double-click a cell to edit. Leave Input empty to use the label, "
                            "or select a pad and capture a key or controller button."))
+        self.show_all_pads = Switch("Show all pads")
+        self.show_all_pads.setToolTip("Show a clickable layout, including blank pads, above the mapping table.")
+        l1.addWidget(self.show_all_pads)
+        self.pad_layout = PadLayoutEditor(self.cfg)
+        self.pad_layout.hide()
+        self.pad_layout.pad_selected.connect(self._select_visual_pad)
+        self.show_all_pads.toggled.connect(self.pad_layout.setVisible)
+        l1.addWidget(self.pad_layout)
         self.table = QTableWidget(0, 6)
         search_row = QHBoxLayout()
         self.key_search = QLineEdit()
@@ -821,6 +937,17 @@ class SettingsWindow(QWidget):
         row.addWidget(btn_add)
         row.addWidget(btn_del)
         l1.addLayout(row)
+        grow_row = QHBoxLayout()
+        self.btn_add_row = QPushButton("Add row")
+        self.btn_add_row.setToolTip("Add a row of blank pads below the layout, spanning its pad columns.")
+        self.btn_add_row.clicked.connect(lambda: self._add_pad_line("row"))
+        self.btn_add_column = QPushButton("Add column")
+        self.btn_add_column.setToolTip("Add a column of blank pads to the right, spanning its pad rows.")
+        self.btn_add_column.clicked.connect(lambda: self._add_pad_line("col"))
+        grow_row.addWidget(self.btn_add_row)
+        grow_row.addWidget(self.btn_add_column)
+        grow_row.addStretch(1)
+        l1.addLayout(grow_row)
         self.selection_hint = muted("Select a pad below to record its input.")
         l1.addWidget(self.selection_hint)
         l1.addWidget(self.table)
@@ -926,7 +1053,158 @@ class SettingsWindow(QWidget):
         self.appearance_columns.setSpacing(16)
         self.appearance_columns.addWidget(c1, 1)
         self.appearance_columns.addWidget(c2, 1)
-        return self._page("Appearance", "Make it yours. Preview your font and colors as you edit.", c0, controls)
+
+        c_pads, l_pads = card()
+        l_pads.addWidget(section("Pads"))
+        l_pads.addWidget(muted("How keys and buttons are drawn. The preview above follows along."))
+        f_pads = form()
+        self.pad_shape_combo = QComboBox()
+        for key, text in PAD_SHAPES:
+            self.pad_shape_combo.addItem(text, key)
+        self.pad_shape_combo.setCurrentIndex(1 if self.cfg.get("shape") == "circle" else 0)
+        self.pad_shape_combo.setMinimumWidth(160)
+        self.pad_shape_combo.setAccessibleName("Pad shape")
+        self.pad_shape_combo.currentIndexChanged.connect(
+            lambda _i: self._set("shape", self.pad_shape_combo.currentData()))
+        f_pads.addRow("Shape", self.pad_shape_combo)
+        self.pad_style_combo = QComboBox()
+        for key in PAD_STYLES:
+            self.pad_style_combo.addItem(PAD_STYLE_NAMES[key], key)
+        self.pad_style_combo.setCurrentIndex(PAD_STYLES.index(self.cfg.get("pad_style", "classic")))
+        self.pad_style_combo.setMinimumWidth(160)
+        self.pad_style_combo.setAccessibleName("Pad style")
+        self.pad_style_combo.currentIndexChanged.connect(
+            lambda _i: self._set("pad_style", self.pad_style_combo.currentData()))
+        f_pads.addRow("Style", self.pad_style_combo)
+        l_pads.addLayout(f_pads)
+
+        c3, l3 = card()
+        l3.addWidget(section("Sticks"))
+        l3.addWidget(muted("How thumbsticks and d-pads are drawn."))
+        f3 = form()
+        self.stick_style_combo = QComboBox()
+        for key in STICK_STYLES:
+            self.stick_style_combo.addItem(STICK_STYLE_NAMES[key], key)
+        self.stick_style_combo.setCurrentIndex(STICK_STYLES.index(self.cfg.get("stick_style", "classic")))
+        self.stick_style_combo.setMinimumWidth(160)
+        self.stick_style_combo.setAccessibleName("Stick style")
+        self.stick_style_combo.currentIndexChanged.connect(
+            lambda _i: self._set("stick_style", self.stick_style_combo.currentData()))
+        f3.addRow("Style", self.stick_style_combo)
+        self.stick_box = Switch("Draw a box behind each stick")
+        self.stick_box.setChecked(bool(self.cfg.get("stick_box", True)))
+        self.stick_box.setToolTip("Off keeps only the ring, petals, or keys, like the plain pads around it.")
+        self.stick_box.toggled.connect(lambda on: self._set("stick_box", bool(on)))
+        f3.addRow("Background", self.stick_box)
+        l3.addLayout(f3)
+        return self._page("Appearance", "Make it yours. Preview your font and colors as you edit.", c0, controls, c_pads, c3)
+
+    def _about_page(self):
+        overview, overview_layout = card()
+        overview_layout.addWidget(section(APP_NAME))
+        overview_layout.addWidget(muted(
+            "A customizable input overlay for Azeron keypads, keyboards, and controllers. "
+            "Show your inputs as you play with a transparent, click-through overlay "
+            "and live layout editing."))
+
+        credits, credits_layout = card()
+        credits_layout.addWidget(section("Created by Andres Perez"))
+        credits_layout.addWidget(muted(
+            "Copyright 2026 Andres Perez. Released under the MIT License."))
+        credits_layout.addWidget(muted(
+            "Built with PySide6, pynput, and the optional pygame-ce controller backend."))
+        donations, donations_layout = card()
+        donations_layout.addWidget(section("Support AZ-Overlay"))
+        donations_layout.addWidget(muted(
+            "Enjoying the overlay? A donation helps support its development. Thank you!"))
+        donation_buttons = QHBoxLayout()
+        donation_buttons.setSpacing(12)
+        for provider, url in (("PayPal", PAYPAL_DONATION_URL), ("Venmo", VENMO_DONATION_URL)):
+            button = QPushButton(f"Donate with {provider}")
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setEnabled(bool(url))
+            button.setToolTip(f"Open {provider} in your browser" if url
+                              else f"{provider} donations are not available yet")
+            button.clicked.connect(
+                lambda checked=False, provider=provider, url=url: self._open_donation(provider, url))
+            donation_buttons.addWidget(button)
+        donation_buttons.addStretch(1)
+        donations_layout.addLayout(donation_buttons)
+        return self._page("About", "Every move. On display.", overview, credits, donations)
+
+    def _open_donation(self, provider, url):
+        if url and not QDesktopServices.openUrl(QUrl(url)):
+            QMessageBox.information(
+                self, f"Open {provider}",
+                f"Could not open your browser. Visit this link to donate:\n{url}")
+
+    def _help_page(self):
+        contact, contact_layout = card()
+        contact.setObjectName("helpContact")
+        contact_layout.addWidget(section("LET’S TALK"))
+        title = QLabel("A little help. A better overlay.")
+        title.setObjectName("helpTitle")
+        title.setWordWrap(True)
+        contact_layout.addWidget(title)
+        contact_layout.addWidget(muted(
+            "Questions, bugs, or a feature you’d love to see? Get in touch with Andres."))
+        contact_layout.addSpacing(6)
+        contact_row = QHBoxLayout()
+        contact_row.setSpacing(16)
+        address = QLabel(SUPPORT_EMAIL)
+        address.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse |
+                                       Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        contact_row.addWidget(address, 1)
+        email_button = QPushButton("Email")
+        email_button.setObjectName("primary")
+        email_button.setMinimumWidth(110)
+        email_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        email_button.setToolTip("Open a Gmail draft in your browser")
+        email_button.clicked.connect(self._email_support)
+        contact_row.addWidget(email_button)
+        contact_layout.addLayout(contact_row)
+        contact_layout.addWidget(muted("Opens Gmail in your browser. For bugs, include your device and what happened."))
+
+        guide, guide_layout = card()
+        guide_layout.addWidget(section("Quick start"))
+        for number, (heading, description) in enumerate((
+            ("Pick your layout", "Choose + New layout and start with a template for your device."),
+            ("Find the perfect spot", "On Layout, choose Edit on screen. Drag to move, scroll to resize, then choose Done editing."),
+            ("Connect your inputs", "On Keys, select a pad and choose Record input to assign a key or controller button."),
+            ("Make it yours", "Adjust fonts and colors on Appearance. Changes to saved layouts are saved automatically."),
+        ), start=1):
+            row = QHBoxLayout()
+            row.setSpacing(14)
+            marker = QLabel(f"{number:02}")
+            marker.setObjectName("helpNumber")
+            marker.setFixedSize(40, 40)
+            marker.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            row.addWidget(marker, 0, Qt.AlignmentFlag.AlignTop)
+            copy = QVBoxLayout()
+            copy.setSpacing(3)
+            step_title = QLabel(heading)
+            step_title.setObjectName("helpStepTitle")
+            copy.addWidget(step_title)
+            copy.addWidget(muted(description))
+            row.addLayout(copy, 1)
+            guide_layout.addLayout(row)
+
+        tip, tip_layout = card()
+        tip_layout.addWidget(section("Can’t see your overlay?"))
+        tip_layout.addWidget(muted(
+            "Turn on Overlay visible below, and use windowed or borderless mode in your game."))
+        return self._page("Help", "Get set up, find your way, or send an idea.", contact, guide, tip)
+
+    def _email_support(self):
+        url = QUrl("https://mail.google.com/mail/")
+        query = QUrlQuery()
+        for key, value in (("view", "cm"), ("fs", "1"), ("to", SUPPORT_EMAIL), ("su", "AZ-Overlay help")):
+            query.addQueryItem(key, value)
+        url.setQuery(query)
+        if not QDesktopServices.openUrl(url):
+            QMessageBox.information(
+                self, "Open Gmail",
+                f"Could not open your browser. Open Gmail and write to {SUPPORT_EMAIL}.")
 
     # ---- behaviour ----------------------------------------------------
     def _theme_changed(self):
@@ -934,6 +1212,8 @@ class SettingsWindow(QWidget):
         self.cfg["theme"] = theme
         self.setPalette(theme_palette(theme))
         self.setStyleSheet(style(theme))
+        for row, name in enumerate(self.PAGES):
+            self.nav.item(row).setIcon(navigation_icon(name, theme))
         for button in self.color_buttons:
             button.refresh()
         # Update custom item brushes without rebuilding the table or losing selection.
@@ -943,6 +1223,7 @@ class SettingsWindow(QWidget):
                 self.table.item(row, 1).setForeground(QColor(theme_colors(self.cfg)["muted"]))
         self.table.blockSignals(blocked)
         self.preview.update()
+        self.pad_layout.update()
         self._schedule_save()
 
     def present(self):
@@ -963,6 +1244,7 @@ class SettingsWindow(QWidget):
 
     def _apply(self):
         self.overlay.apply()
+        self.pad_layout.update()
         if hasattr(self, "preview"):
             self.preview.update()
         self._schedule_save()
@@ -1014,6 +1296,12 @@ class SettingsWindow(QWidget):
         self._schedule_save()
 
     # keys table
+    def _select_visual_pad(self, row):
+        self.btn_capture.setChecked(False)
+        self.key_search.clear()
+        self.table.selectRow(row)
+        self.table.scrollToItem(self.table.item(row, 0))
+
     def _show_key_geometry(self, visible):
         for column in range(2, 6):
             self.table.setColumnHidden(column, not visible)
@@ -1034,6 +1322,8 @@ class SettingsWindow(QWidget):
 
     def _pad_selection_changed(self):
         selected = bool(self.table.selectionModel().selectedRows())
+        self.pad_layout.selected = self.table.currentRow() if selected else -1
+        self.pad_layout.update()
         self.btn_capture.setEnabled(selected)
         self.btn_remove_pad.setEnabled(selected)
         if selected:
@@ -1132,6 +1422,27 @@ class SettingsWindow(QWidget):
         self.cfg["keys"].append({"label": "", "col": col, "row": row, "w": 1, "h": 1})
         self._fill_table()
         self.table.selectRow(self.table.rowCount() - 1)
+        self._apply()
+
+    def _add_pad_line(self, axis):
+        """Append unit pads beyond the layout bounds without copying bindings."""
+        self.btn_capture.setChecked(False)
+        self.key_search.clear()
+        keys = self.cfg["keys"]
+        cross = "col" if axis == "row" else "row"
+        size = "h" if axis == "row" else "w"
+        cross_size = "w" if axis == "row" else "h"
+        edge = max([k[axis] + k.get(size, 1) for k in keys] +
+                   [s[axis] + s.get(size, 2) for s in self.cfg.get("sticks", [])], default=0)
+        start = min((k[cross] for k in keys), default=0)
+        end = max((k[cross] + k.get(cross_size, 1) for k in keys), default=start + 1)
+        first = len(keys)
+        for offset in range(max(1, ceil(end - start))):
+            keys.append({"label": "", axis: edge, cross: start + offset, "w": 1, "h": 1})
+        self.show_all_pads.setChecked(True)
+        self._fill_table()
+        self.table.selectRow(first)
+        self.table.scrollToItem(self.table.item(first, 0))
         self._apply()
 
     def _remove_pad(self):
@@ -1254,13 +1565,15 @@ class SettingsWindow(QWidget):
         dlg = TemplateDialog(self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
+        if not self._save_now():
+            return
         name = dlg.name.text().strip() or dlg.device.currentText()
         prof = dlg.result_profile()
         prof["colors"] = dict(self.cfg["colors"])  # keep the user's colours
         prof["x"], prof["y"], prof["opacity"] = self.cfg["x"], self.cfg["y"], self.cfg.get("opacity", 0.85)
         migrate(prof)
         try:
-            save_profile(name, prof)
+            name = save_profile(name, prof)
         except (OSError, ValueError) as e:
             self._show_error(f"Could not save: {e}")
             return
@@ -1275,41 +1588,43 @@ class SettingsWindow(QWidget):
     def _refresh_profiles(self):
         self.profile_combo.blockSignals(True)
         self.profile_combo.clear()
-        self.profile_combo.addItem("Unsaved layout")
+        self.profile_combo.setPlaceholderText("Choose a saved layout")
         for name in list_profiles():
             self.profile_combo.addItem(name)
         current = self.cfg.get("profile", "")
-        i = self.profile_combo.findText(current) if current else 0
-        self.profile_combo.setCurrentIndex(max(0, i))
-        self.delete_layout_action.setEnabled(self.profile_combo.currentIndex() > 0)
+        i = self.profile_combo.findText(current) if current else -1
+        self.profile_combo.setCurrentIndex(i)
+        self.delete_layout_action.setEnabled(i >= 0)
         self.profile_combo.blockSignals(False)
 
     def _profile_selected(self, index):
-        self.delete_layout_action.setEnabled(index > 0)
-        if index == 0:
+        if index < 0:
             return
-        self.profile_combo.setCurrentIndex(index)
         name = self.profile_combo.itemText(index)
+        if not self._save_now():
+            self._refresh_profiles()
+            return
         try:
             data = load_profile(name)
         except (OSError, ValueError) as e:
+            self._refresh_profiles()
             self._show_error(f"Could not load: {e}")
             return
         for k in PROFILE_KEYS:
+            self.cfg.pop(k, None)
             if k in data:
                 self.cfg[k] = data[k]
         self.cfg["profile"] = name
+        self._refresh_profiles()
         self._rebuild_tabs()
         self._apply()
+        self._save_now()
 
     def _profile_save(self):
-        if self.profile_combo.currentIndex() == 0:
+        if not self.cfg.get("profile"):
             self._profile_save_as()
             return
-        name = self.profile_combo.currentText()
-        save_profile(name, self.cfg)
-        self.cfg["profile"] = name
-        self._schedule_save()
+        self._save_now()
 
     def _profile_save_as(self):
         name, ok = QInputDialog.getText(self, "Save layout", "Layout name:",
@@ -1317,8 +1632,10 @@ class SettingsWindow(QWidget):
         name = name.strip()
         if not ok or not name:
             return
+        if not self._save_now():
+            return
         try:
-            save_profile(name, self.cfg)
+            name = save_profile(name, self.cfg)
         except (OSError, ValueError) as e:
             self._show_error(f"Could not save: {e}")
             return
@@ -1327,7 +1644,7 @@ class SettingsWindow(QWidget):
         self._schedule_save()
 
     def _profile_delete(self):
-        if self.profile_combo.currentIndex() == 0:
+        if not self.cfg.get("profile"):
             return
         name = self.profile_combo.currentText()
         if QMessageBox.question(self, "Delete layout", f"Delete layout '{name}'?") != QMessageBox.StandardButton.Yes:
@@ -1343,10 +1660,13 @@ class SettingsWindow(QWidget):
         self.save_timer.start()
 
     def _save_now(self):
+        self.save_timer.stop()
         try:
             save_config(self.cfg)
-        except OSError as e:
+        except (OSError, ValueError) as e:
             self._show_error(f"Save failed: {e}")
+            return False
+        return True
 
     def _show_error(self, text):
         QMessageBox.warning(self, "Settings", text)

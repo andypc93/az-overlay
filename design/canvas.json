@@ -1,0 +1,257 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Settings \u00b7 Layout",
+      "x": 0,
+      "y": 0,
+      "w": 1040,
+      "h": 860
+    },
+    {
+      "file": "Appearance.dc.html",
+      "title": "Settings \u00b7 Appearance",
+      "x": 1140,
+      "y": 0,
+      "w": 1040,
+      "h": 860
+    },
+    {
+      "file": "Overlay.dc.html",
+      "title": "Overlay \u00b7 Cyborg 2 layout",
+      "x": 2280,
+      "y": 0,
+      "w": 900,
+      "h": 760
+    },
+    {
+      "file": "Keys.dc.html",
+      "title": "Settings \u00b7 Keys (full length)",
+      "x": 0,
+      "y": 1000,
+      "w": 1040,
+      "h": 1100
+    },
+    {
+      "file": "Help.dc.html",
+      "title": "Settings \u00b7 Help (full length)",
+      "x": 1140,
+      "y": 1000,
+      "w": 1040,
+      "h": 960
+    },
+    {
+      "file": "About.dc.html",
+      "title": "Settings \u00b7 About",
+      "x": 2280,
+      "y": 1000,
+      "w": 1040,
+      "h": 860
+    },
+    {
+      "file": "MouseLayouts.dc.html",
+      "title": "Overlay \u00b7 Mouse layouts",
+      "x": 0,
+      "y": 2240,
+      "w": 1258,
+      "h": 348
+    },
+    {
+      "file": "LayoutLight.dc.html",
+      "title": "Settings \u00b7 Layout (light)",
+      "page": "page-4",
+      "x": 0,
+      "y": 0,
+      "w": 1040,
+      "h": 860
+    },
+    {
+      "file": "AppearanceLight.dc.html",
+      "title": "Settings \u00b7 Appearance (light)",
+      "page": "page-4",
+      "x": 1140,
+      "y": 0,
+      "w": 1040,
+      "h": 860
+    },
+    {
+      "file": "AboutLight.dc.html",
+      "title": "Settings \u00b7 About (light)",
+      "page": "page-4",
+      "x": 2280,
+      "y": 0,
+      "w": 1040,
+      "h": 860
+    },
+    {
+      "file": "KeysLight.dc.html",
+      "title": "Settings \u00b7 Keys (light, full length)",
+      "page": "page-4",
+      "x": 0,
+      "y": 1000,
+      "w": 1040,
+      "h": 1100
+    },
+    {
+      "file": "HelpLight.dc.html",
+      "title": "Settings \u00b7 Help (light, full length)",
+      "page": "page-4",
+      "x": 1140,
+      "y": 1000,
+      "w": 1040,
+      "h": 960
+    },
+    {
+      "file": "StickCurrent.dc.html",
+      "title": "Current",
+      "page": "page-2",
+      "x": 0,
+      "y": 0,
+      "w": 560,
+      "h": 360
+    },
+    {
+      "file": "StickA.dc.html",
+      "title": "Option A: Ring gauge",
+      "page": "page-2",
+      "x": 660,
+      "y": 0,
+      "w": 560,
+      "h": 360
+    },
+    {
+      "file": "StickB.dc.html",
+      "title": "Option B: Petals",
+      "page": "page-2",
+      "x": 1320,
+      "y": 0,
+      "w": 560,
+      "h": 360
+    },
+    {
+      "file": "StickC.dc.html",
+      "title": "Option C: Vector",
+      "page": "page-2",
+      "x": 0,
+      "y": 500,
+      "w": 560,
+      "h": 360
+    },
+    {
+      "file": "StickD.dc.html",
+      "title": "Option D: Key cross",
+      "page": "page-2",
+      "x": 660,
+      "y": 500,
+      "w": 560,
+      "h": 360
+    },
+    {
+      "file": "BulkFinal.dc.html",
+      "title": "Keys \u00b7 bulk delete (chosen)",
+      "page": "page-5",
+      "x": 0,
+      "y": 0,
+      "w": 1040,
+      "h": 1100
+    },
+    {
+      "file": "BulkA.dc.html",
+      "title": "Option A \u00b7 Buttons row",
+      "page": "page-5",
+      "x": 1140,
+      "y": 0,
+      "w": 1040,
+      "h": 1100
+    },
+    {
+      "file": "BulkB.dc.html",
+      "title": "Option B \u00b7 Selection toolbar",
+      "page": "page-5",
+      "x": 2280,
+      "y": 0,
+      "w": 1040,
+      "h": 1100
+    },
+    {
+      "file": "BulkC.dc.html",
+      "title": "Option C \u00b7 Visual first",
+      "page": "page-5",
+      "x": 3420,
+      "y": 0,
+      "w": 1040,
+      "h": 1100
+    },
+    {
+      "file": "PadClassic.dc.html",
+      "title": "Classic",
+      "page": "page-3",
+      "x": 0,
+      "y": 0,
+      "w": 560,
+      "h": 300
+    },
+    {
+      "file": "PadOutline.dc.html",
+      "title": "Outline",
+      "page": "page-3",
+      "x": 660,
+      "y": 0,
+      "w": 560,
+      "h": 300
+    },
+    {
+      "file": "PadKeycap.dc.html",
+      "title": "Keycap",
+      "page": "page-3",
+      "x": 1320,
+      "y": 0,
+      "w": 560,
+      "h": 300
+    },
+    {
+      "file": "PadUnderline.dc.html",
+      "title": "Underline",
+      "page": "page-3",
+      "x": 0,
+      "y": 440,
+      "w": 560,
+      "h": 300
+    },
+    {
+      "file": "PadPill.dc.html",
+      "title": "Pill",
+      "page": "page-3",
+      "x": 660,
+      "y": 440,
+      "w": 560,
+      "h": 300
+    }
+  ],
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Screens"
+    },
+    {
+      "id": "page-4",
+      "name": "Screens \u00b7 Light"
+    },
+    {
+      "id": "page-2",
+      "name": "Stick directions"
+    },
+    {
+      "id": "page-3",
+      "name": "Pad styles"
+    },
+    {
+      "id": "page-5",
+      "name": "Bulk delete (prototype)"
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-4"
+  }
+}

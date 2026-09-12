@@ -7,17 +7,20 @@
     <a href="#get-started">Get started</a> ·
     <a href="#make-it-yours">Customize</a> ·
     <a href="#supported-devices">Devices</a> ·
-    <a href="#build-an-executable">Build</a>
+    <a href="#build-an-executable">Build</a> ·
+    <a href="#support-az-overlay">Donate</a>
   </p>
 </div>
 
 <br>
 
-![AZ-Overlay settings window](docs/settings.png)
+![AZ-Overlay settings window, Layout page](docs/layout.png)
 
 Show your inputs as you play. Keys light up when pressed and fade on release;
 controller sticks and triggers animate as they move. The overlay stays above
 your game and lets clicks pass through during normal use.
+
+![The overlay in a game: an Azeron layout with two keys and the stick lit](docs/overlay.png)
 
 ## Get started
 
@@ -57,6 +60,8 @@ Right-click a pad to clear it.
 
 ### 3. Map your inputs
 
+![Keys page with the pad table](docs/keys.png)
+
 On **Keys**, find and select a pad, choose **Record input**, then press a key or
 controller button. Use **Cancel recording** to stop; leaving the page also
 cancels recording.
@@ -70,26 +75,43 @@ Double-click a cell to edit it directly. **Label** controls the displayed text;
 | Any of several keys | `F5, F6` | Lights when either key is held |
 | Key combination | `Ctrl+Shift+K` | Requires the combination |
 | Controller button | `gp:a` | Uses the controller input |
+| Mouse button | `Mouse 4` | Left, Right, Middle, 4 and 5 |
+| Scroll wheel | `Wheel Up` | Lights briefly on each tick; `Wheel Down` for the other way |
 | Physical key | `sc:0x1e` | Matches a keyboard position by scancode |
 
 An empty input uses the label as its binding. An empty label and input hide the
 pad. Enable **Edit position & size** to reveal geometry columns, or expand
 **Sticks & d-pads** to configure directional controls.
 
+Turn on **Show all pads** for a clickable layout that includes blank pads.
+Click a pad to select its mapping in the table. **Add row** adds blank pads
+below the layout; **Add column** adds them to the right. Both reveal the layout
+automatically so you can select and assign the new pads.
+
 ### 4. Set the style
+
+![Appearance page with preview, key text, colors, pad and stick styles](docs/appearance.png)
 
 On **Appearance**, adjust the font, size, weight, and colors. The live preview
 shows idle and pressed states, each with its own fill, border, and text color.
 The size you pick is the maximum: long labels shrink automatically so text
 always stays inside its pad, including on round buttons.
 
+Under **Pads**, pick the shape (rounded or circle) and a style: **Classic**,
+**Outline** (see-through until pressed), **Keycap** (raised face), **Underline**
+(flat tile with a status bar), or **Pill**. Under **Sticks**, choose how
+thumbsticks and d-pads are drawn: **Classic**, **Ring gauge**, **Petals**,
+**Vector**, or **Key cross**, and whether a box is drawn behind each stick. All
+of it is saved with the layout.
+
 Choose **Light** or **Dark** in the **Theme** selector at the top of settings.
 Your choice applies immediately and is remembered across restarts and layout
 changes. It controls the settings window; overlay colors are set separately.
 
-> **Working settings save automatically.** Use **Save layout** to update a named
-> layout with your current edits. **More → Save as new layout…** keeps a separate
-> copy; **More → Delete saved layout…** removes a saved layout.
+> **Saved layouts autosave changes.** The app remembers your last selected layout
+> and reopens it at startup. Unnamed layout edits stay temporary until you choose
+> **Save layout**. **More → Save as new layout…** keeps a separate copy;
+> **More → Delete saved layout…** removes a saved layout.
 
 ## Supported devices
 
@@ -97,11 +119,17 @@ changes. It controls the settings window; overlay colors are set separately.
 | :--- | :--- |
 | **Azeron** | Cyborg II, Cyborg II Compact, Cyborg, Cyborg Compact, Keyzen, Cyro, Classic, Compact |
 | **Keyboards** | 100%, 1800, 96%, 80% TKL, 75% and 65% exploded or compact, 60%, 50%, 40% |
+| **Mouse** | 2, 3, 5 and 8 buttons, and an MMO mouse with a 12-key thumb plate |
 | **Controllers** | Xbox and PlayStation, with analog sticks and triggers |
+
+![The five mouse templates](docs/mouse.png)
 
 Keyboard templates include US (ANSI), UK, German, French, and Spanish (ISO)
 layouts. Azeron templates support keys and an analog thumbstick; the Cyro
-template also supports mouse-button highlighting.
+template also supports mouse-button highlighting. Mouse templates show scroll
+ticks above and below the wheel; the MMO thumb plate uses the 1–9, 0, −, = keys
+that Naga and G600 style mice send by default. DPI and sniper buttons start
+unbound, so record an input for them on **Keys**.
 
 ## Keyboard shortcuts
 
@@ -137,6 +165,9 @@ your changes.
 | `opacity` | Overlay opacity, from `0` to `1` |
 | `cell_w`, `cell_h`, `gap` | Base key dimensions and spacing |
 | `keys` | Labels, input bindings, positions, dimensions, and shapes |
+| `decor` | Silhouettes drawn behind the pads, such as a mouse body |
+| `pad_style`, `shape` | How keys are drawn: `classic`, `outline`, `keycap`, `underline`, `pill`; `rect` or `circle` |
+| `stick_style`, `stick_box` | Stick look: `classic`, `ring`, `petals`, `vector`, `keys`; box behind each stick |
 | `sticks` | Direction bindings, analog axes, click input, and geometry |
 | `font` | Family, maximum point size at scale `1.0`, and bold weight |
 | `colors` | Idle and pressed fill, outline, and text colors |
@@ -179,6 +210,18 @@ python -m pytest -q
 - Use **windowed or borderless** display mode. Exclusive fullscreen can hide the overlay.
 - Controller input uses SDL's game-controller mappings. Detection depends on the device and its driver.
 - The app uses global input hooks. Check your game's rules before using it with anti-cheat software.
+
+## Support AZ-Overlay
+
+Enjoying the overlay? A donation helps support its development. Thank you!
+
+<!-- Wrap the PayPal badge in a link once the creator's PayPal URL is available. -->
+<p>
+  <img src="assets/donate-paypal.svg" alt="Donate with PayPal — link coming soon" width="190" height="40">
+  <a href="https://venmo.com/andrespc93"><img src="assets/donate-venmo.svg" alt="Donate with Venmo to @andrespc93" width="190" height="40"></a>
+</p>
+
+Donate on Venmo to **@andrespc93**. The PayPal donation link is coming soon.
 
 ## License
 

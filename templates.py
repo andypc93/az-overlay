@@ -430,8 +430,52 @@ PLAYSTATION = {"lt": "L2", "rt": "R2", "lb": "L1", "rb": "R1", "back": "Create",
                "touchpad": "Touchpad"}
 
 
+# ---- mice --------------------------------------------------------------------
+# From a plain two-button mouse to an MMO mouse with a 12-key thumb grid. Main
+# buttons and Back / Forward send real mouse buttons and the wheel shows scroll
+# ticks above and below the middle click; the MMO thumb grid uses the
+# 1-9, 0, -, = keys that Naga / G600 style mice send by default. DPI and sniper
+# buttons normally send nothing, so they start unbound: record an input on Keys.
+MICE = [("2 buttons", 2), ("3 buttons", 3), ("5 buttons", 5), ("8 buttons", 8), ("MMO (12 side buttons)", 12)]
+MMO_SIDE = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "="]
+
+
+def mouse_profile(template="3 buttons"):
+    """A mouse seen from above: the body is a silhouette behind the pads, the two main
+    buttons carry the domed top, thumb keys hang off the left flank."""
+    buttons = dict(MICE).get(template, 3)
+    bx = 2.0 if buttons == 12 else (0.6 if buttons >= 5 else 0.0)  # body x; thumb keys sit left of it
+    body = {"kind": "mouse", "col": bx, "row": 0, "w": 4.0, "h": 6.4}
+    keys = []
+    if buttons == 2:
+        keys += [{"label": "Left", "input": "Mouse Left", "shape": "mouse_left_full", "col": bx, "row": 0, "w": 2.0, "h": 2.7},
+                 {"label": "Right", "input": "Mouse Right", "shape": "mouse_right_full", "col": bx + 2.0, "row": 0, "w": 2.0, "h": 2.7}]
+    else:
+        keys += [{"label": "Left", "input": "Mouse Left", "shape": "mouse_left", "col": bx, "row": 0, "w": 1.6, "h": 2.7},
+                 {"label": "▲", "input": "Wheel Up", "col": bx + 1.6, "row": 0.45, "w": 0.8, "h": 0.45},
+                 {"label": "Wheel", "input": "Mouse Middle", "col": bx + 1.6, "row": 0.95, "w": 0.8, "h": 0.9},
+                 {"label": "▼", "input": "Wheel Down", "col": bx + 1.6, "row": 1.9, "w": 0.8, "h": 0.45},
+                 {"label": "Right", "input": "Mouse Right", "shape": "mouse_right", "col": bx + 2.4, "row": 0, "w": 1.6, "h": 2.7}]
+    if buttons in (5, 8):
+        keys += [{"label": "Fwd", "input": "Mouse 5", "col": bx - 0.5, "row": 2.9, "w": 1.0, "h": 0.7},
+                 {"label": "Back", "input": "Mouse 4", "col": bx - 0.5, "row": 3.7, "w": 1.0, "h": 0.7}]
+    if buttons == 8:
+        keys += [{"label": "DPI +", "input": "", "col": bx + 1.6, "row": 2.85, "w": 0.8, "h": 0.5},
+                 {"label": "DPI −", "input": "", "col": bx + 1.6, "row": 3.4, "w": 0.8, "h": 0.5},
+                 {"label": "Sniper", "input": "", "col": bx - 0.5, "row": 4.5, "w": 1.0, "h": 0.7}]
+    if buttons == 12:  # a 3 x 4 thumb plate on the flank replaces Back / Forward
+        for i, key in enumerate(MMO_SIDE):
+            keys.append({"label": key, "input": key, "col": 0.1 + (i % 3) * 0.95, "row": 2.8 + (i // 3) * 0.85,
+                         "w": 0.9, "h": 0.8})
+    return {
+        "cell_w": 40, "cell_h": 40, "gap": 0, "scale": 1.0, "shape": "rect",
+        "font": {"family": "Segoe UI", "size": 9, "bold": True},
+        "keys": keys, "sticks": [], "decor": [body],
+    }
+
+
 # ---- catalogue ----------------------------------------------------------------
-DEVICES = ["Azeron", "Keyboard", "Xbox controller", "PlayStation controller"]
+DEVICES = ["Azeron", "Keyboard", "Mouse", "Xbox controller", "PlayStation controller"]
 
 
 def templates_for(device):
@@ -439,6 +483,8 @@ def templates_for(device):
         return [name for name, _ in KEYBOARDS]
     if device == "Azeron":
         return [name for name, _ in AZERON_MODELS]
+    if device == "Mouse":
+        return [name for name, _ in MICE]
     return [device]
 
 
@@ -450,6 +496,8 @@ def build(device, template=None, layout=None):
     """Return a fresh profile dict for the chosen template."""
     if device == "Keyboard":
         return keyboard_profile(template or KEYBOARDS[0][0], layout or "US (ANSI)")
+    if device == "Mouse":
+        return mouse_profile(template or MICE[0][0])
     if device == "Xbox controller":
         return _controller(XBOX)
     if device == "PlayStation controller":
@@ -464,4 +512,6 @@ def suggested_name(device, template=None, layout=None):
         return f"{template} – {layout}"
     if device == "Azeron":
         return f"Azeron {template}"
+    if device == "Mouse":
+        return f"Mouse – {template}"
     return device

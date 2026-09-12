@@ -73,6 +73,40 @@ def test_profile_name_sanitised(tmp_path, monkeypatch):
         overlay.save_profile("///", overlay.load_config())
 
 
+@pytest.mark.parametrize("remembered, expected", [("Z layout", "Z layout"), ("Deleted layout", "A layout"), ("", "A layout")])
+def test_startup_restores_saved_layout(remembered, expected, tmp_path, monkeypatch):
+    cfg = overlay.load_config()
+    monkeypatch.setattr(overlay, "CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setattr(overlay, "PROFILE_DIR", str(tmp_path / "profiles"))
+    for name, x in (("A layout", 100), ("Z layout", 200)):
+        overlay.save_profile(name, dict(cfg, x=x))
+    cfg.update(profile=remembered, x=999, theme="light")
+    (tmp_path / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+    restored = overlay.load_config()
+    assert restored["profile"] == expected
+    assert restored["x"] == (200 if expected == "Z layout" else 100)
+    assert restored["theme"] == "light"
+
+
+def test_no_saved_layout_keeps_temporary_edits_out_of_config(tmp_path, monkeypatch):
+    cfg = overlay.load_config()
+    cfg["profile"] = ""
+    monkeypatch.setattr(overlay, "CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setattr(overlay, "PROFILE_DIR", str(tmp_path / "profiles"))
+    (tmp_path / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+    original_x = cfg["x"]
+    cfg["x"] += 111
+    cfg["keys"][0]["label"] = "Temporary edit"
+    cfg["theme"] = "light"
+    overlay.save_config(cfg)
+    restored = overlay.load_config()
+    assert restored["profile"] == ""
+    assert restored["x"] == original_x
+    assert restored["keys"][0]["label"] != "Temporary edit"
+    assert restored["theme"] == "light"
+    assert overlay.list_profiles() == []
+
+
 def test_parse_input_chord_and_alternatives():
     chord = overlay.parse_input("Ctrl+Shift+K")
     assert len(chord) == 1 and len(chord[0]) == 3
