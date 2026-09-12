@@ -757,6 +757,179 @@ def mouse_board():
     return inner, fw, fh
 
 
+
+# ---- prototype: bulk delete on the Keys page (wayfinder ticket 05) ----------
+# Three structurally different options. Selection = the pads in column 3 of the
+# Cyborg 2 layout, as if the user ctrl-clicked them. Throwaway once one wins.
+def _cfg_keys():
+    with open(os.path.join(os.path.dirname(OUT), "config.json"), encoding="utf-8") as f:
+        return json.load(f)["keys"]
+
+
+SEL_COL = 3
+
+
+def pad_map(width, height, selected_cols=(SEL_COL,), marquee=False):
+    """Visual layout (PadLayoutEditor) with multi-selected pads, scaled to fit."""
+    keys = _cfg_keys()
+    cw, ch, gap = 100, 140, 8
+    xs = [k["col"] * (cw + gap) for k in keys]
+    ys = [k["row"] * (ch + gap) for k in keys]
+    bw = max(x + k.get("w", 1) * (cw + gap) - gap for x, k in zip(xs, keys)) - min(xs)
+    bh = max(y + k.get("h", 1) * (ch + gap) - gap for y, k in zip(ys, keys)) - min(ys)
+    ratio = min((width - 24) / bw, (height - 24) / bh)
+    ox = (width - bw * ratio) / 2 - min(xs) * ratio
+    oy = (height - bh * ratio) / 2 - min(ys) * ratio
+    svg = f'<rect x="0" y="0" width="{width}" height="{height}" fill="{T["preview"]}"></rect>'
+    sel_rects = []
+    for k, x, y in zip(keys, xs, ys):
+        rx, ry = ox + x * ratio, oy + y * ratio
+        rw = (k.get("w", 1) * (cw + gap) - gap) * ratio
+        rh = (k.get("h", 1) * (ch + gap) - gap) * ratio
+        sel = k["col"] in selected_cols
+        if sel:
+            sel_rects.append((rx, ry, rw, rh))
+        fill = T["selection"] if sel else T["field"]
+        stroke = T["accent"] if sel else T["strong_line"]
+        svg += (f'<rect x="{rx:.1f}" y="{ry:.1f}" width="{rw:.1f}" height="{rh:.1f}" rx="5" fill="{fill}" '
+                f'stroke="{stroke}" stroke-width="{2 if sel else 1}"></rect>')
+        svg += _txt(rx + rw / 2, ry + rh / 2 + 4, k["label"] or "", 11, T["accent"] if sel else T["text"], weight=600)
+    if marquee and sel_rects:
+        x0 = min(r[0] for r in sel_rects) - 8
+        y0 = min(r[1] for r in sel_rects) - 8
+        x1 = max(r[0] + r[2] for r in sel_rects) + 8
+        y1 = max(r[1] + r[3] for r in sel_rects) + 8
+        svg += (f'<rect x="{x0:.1f}" y="{y0:.1f}" width="{x1 - x0:.1f}" height="{y1 - y0:.1f}" fill="{T["accent"]}" '
+                f'fill-opacity="0.08" stroke="{T["accent"]}" stroke-width="1.5" stroke-dasharray="6 4"></rect>')
+    return (f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" '
+            f'style="display: block; border-radius: 10px;">{svg}</svg>')
+
+
+def pad_table(rows, selected, cols=("Label", "Input"), height=42):
+    n = len(cols)
+    thead = (f'<div style="display: grid; grid-template-columns: repeat({n}, minmax(0, 1fr)); color: {T["muted"]}; '
+             f'font-size: {8*PT:.2f}px; font-weight: 600; border-bottom: 1px solid {T["line"]};">'
+             + "".join(f'<div style="padding: 8px;">{c}</div>' for c in cols) + '</div>')
+    trs = ""
+    for i, cells in enumerate(rows):
+        sel = i in selected
+        bg = T["selection"] if sel else "transparent"
+        color = T["accent"] if sel else T["text"]
+        trs += (f'<div style="display: grid; grid-template-columns: repeat({n}, minmax(0, 1fr)); height: {height}px; '
+                f'align-items: center; background: {bg}; color: {color}; border-bottom: 1px solid {T["line"]};">'
+                + "".join(f'<div style="padding: 8px;">{c}</div>' for c in cells) + '</div>')
+    return f'<div style="display: flex; flex-direction: column; background: {T["card"]};">{thead}{trs}</div>'
+
+
+def _rows_from_cfg():
+    keys = _cfg_keys()
+    rows, selected = [], set()
+    for i, k in enumerate(keys[:12]):
+        rows.append((k["label"] or f"#{i + 1}", k.get("input", "")))
+        if k["col"] == SEL_COL:
+            selected.add(i)
+    return rows, selected
+
+
+def undo_bar(text="Undo delete · 12 pads"):
+    return (f'<div style="display: flex; align-items: center; gap: 12px; background: {T["selection"]}; '
+            f'border: 1px solid {T["accent"]}; border-radius: 10px; padding: 8px 12px; color: {T["accent"]}; '
+            f'font-weight: 600;">{text}<span style="color: {T["muted"]}; font-weight: 400;">Ctrl+Z</span></div>')
+
+
+KEYS_TITLE = ("Keys &amp; inputs", "Choose a pad. Record an input. Make it yours.")
+
+
+def bulk_a():
+    """Option A: today's page; Remove counts the selection, Delete row/column join Add row/Add column."""
+    rows, selected = _rows_from_cfg()
+    c1 = card(
+        section("Pads"),
+        muted("Ctrl-click or shift-click to select several pads. Delete removes the selection."),
+        switch("Show all pads", on=True),
+        pad_map(756, 220),
+        f'<div style="display: flex; align-items: center; gap: 10px;">{field("Search by label or input", placeholder=True, flex=1)}{muted("30 / 30 pads", wrap=False)}</div>',
+        f'<div style="display: flex; align-items: center; gap: 10px;">{button("Record input", kind="primary")}<div style="flex: 1;"></div>{button("Add pad")}{button("Remove 3 pads", kind="quiet")}</div>',
+        f'<div style="display: flex; align-items: center; gap: 10px;">{button("Add row")}{button("Add column")}<div style="width: 18px;"></div>{button("Delete row")}{button("Delete column")}</div>',
+        muted("3 pads selected"),
+        pad_table(rows, selected),
+        undo_bar(),
+        switch("Edit position &amp; size"),
+    )
+    return window("Keys", page(*KEYS_TITLE, c1, disclosure("Sticks &amp; d-pads")), height=KEYS_H)
+
+
+def bulk_b():
+    """Option B: a selection toolbar exists only while pads are selected; Add controls stay quiet."""
+    rows, selected = _rows_from_cfg()
+    toolbar = (f'<div style="display: flex; align-items: center; gap: 10px; background: {T["field"]}; '
+               f'border: 1px solid {T["accent"]}; border-radius: 12px; padding: 8px 8px 8px 14px;">'
+               f'<span style="color: {T["accent"]}; font-weight: 600;">3 selected</span>'
+               f'<div style="flex: 1;"></div>{button("Delete")}{button("Delete row")}{button("Delete column")}{button("Clear", kind="quiet")}</div>')
+    c1 = card(
+        section("Pads"),
+        muted("Select pads here or in the table. A toolbar shows what you can do with the selection."),
+        switch("Show all pads", on=True),
+        pad_map(756, 220),
+        toolbar,
+        f'<div style="display: flex; align-items: center; gap: 10px;">{field("Search by label or input", placeholder=True, flex=1)}{muted("30 / 30 pads", wrap=False)}</div>',
+        pad_table(rows, selected),
+        f'<div style="display: flex; align-items: center; gap: 10px;">{button("Record input", kind="primary")}<div style="flex: 1;"></div>{button("Add pad")}{button("Add row")}{button("Add column")}</div>',
+        f'<div style="display: flex; justify-content: flex-end;">{undo_bar()}</div>',
+        switch("Edit position &amp; size"),
+    )
+    return window("Keys", page(*KEYS_TITLE, c1, disclosure("Sticks &amp; d-pads")), height=KEYS_H)
+
+
+def bulk_c():
+    """Option C: visual first; big layout with a drag-box, actions in a side rail, table demoted to a compact list."""
+    rows, selected = _rows_from_cfg()
+    rail = (f'<div style="display: flex; flex-direction: column; gap: 8px; width: 176px; flex: 0 0 auto;">'
+            f'{button("Record input", kind="primary")}<div style="height: 6px;"></div>'
+            f'{section("Add")}{button("Pad")}{button("Row")}{button("Column")}<div style="height: 6px;"></div>'
+            f'{section("Delete")}{button("3 selected")}{button("Their rows")}{button("Their columns")}'
+            f'<div style="height: 6px;"></div>{undo_bar("Undo · 12 pads")}</div>')
+    body = f'<div style="display: flex; gap: 16px; align-items: flex-start;">{pad_map(560, 330, marquee=True)}{rail}</div>'
+    c1 = card(
+        section("Pads"),
+        muted("Drag a box or ctrl-click pads on the layout. Everything you can do with them sits on the right."),
+        body,
+        f'<div style="display: flex; align-items: center; gap: 10px;">{field("Search by label or input", placeholder=True, flex=1)}{muted("3 selected · 30 pads", wrap=False)}</div>',
+        pad_table(rows[:8], selected, height=34),
+        switch("Edit position &amp; size"),
+    )
+    return window("Keys", page(*KEYS_TITLE, c1, disclosure("Sticks &amp; d-pads")), height=KEYS_H)
+
+
+def bulk_final():
+    """Winner (2026-09-12): B's selection toolbar, search directly above the table, A's full-width undo bar under it."""
+    rows, selected = _rows_from_cfg()
+    toolbar = (f'<div style="display: flex; align-items: center; gap: 10px; background: {T["field"]}; '
+               f'border: 1px solid {T["accent"]}; border-radius: 12px; padding: 8px 8px 8px 14px;">'
+               f'<span style="color: {T["accent"]}; font-weight: 600;">3 selected</span>'
+               f'<div style="flex: 1;"></div>{button("Delete")}{button("Delete row")}{button("Delete column")}{button("Clear", kind="quiet")}</div>')
+    c1 = card(
+        section("Pads"),
+        muted("Select pads on the layout or in the table. Delete removes the selection; Undo brings it back."),
+        switch("Show all pads", on=True),
+        pad_map(756, 220),
+        toolbar,
+        f'<div style="display: flex; align-items: center; gap: 10px;">{field("Search by label or input", placeholder=True, flex=1)}{muted("30 / 30 pads", wrap=False)}</div>',
+        pad_table(rows, selected),
+        undo_bar(),
+        f'<div style="display: flex; align-items: center; gap: 10px;">{button("Record input", kind="primary")}<div style="flex: 1;"></div>{button("Add pad")}{button("Add row")}{button("Add column")}</div>',
+        switch("Edit position &amp; size"),
+    )
+    return window("Keys", page(*KEYS_TITLE, c1, disclosure("Sticks &amp; d-pads")), height=KEYS_H)
+
+
+BULK_OPTIONS = {
+    "BulkFinal.dc.html": (bulk_final, "Keys · bulk delete (chosen)"),
+    "BulkA.dc.html": (bulk_a, "Option A · Buttons row"),
+    "BulkB.dc.html": (bulk_b, "Option B · Selection toolbar"),
+    "BulkC.dc.html": (bulk_c, "Option C · Visual first"),
+}
+
 # ---- emit -----------------------------------------------------------------
 def settings_boards(theme, suffix=""):
     """The five settings pages in one theme. Every builder reads the shared T palette."""
@@ -791,6 +964,8 @@ for fname, (style, name, motive, tradeoff) in PAD_OPTIONS.items():
     html, pw, ph = pad_sheet(style, name, motive, tradeoff)
     boards[fname] = html
     pad_boards[fname] = (pw, ph)
+for fname, (fn, _title) in BULK_OPTIONS.items():
+    boards[fname] = fn()
 for name, inner in boards.items():
     if name in light_boards:
         T.clear()
@@ -820,12 +995,17 @@ canvas = {
          "x": (i % 3) * (560 + 100), "y": (i // 3) * (360 + 140), "w": sw, "h": sh}
         for i, (fname, (sw, sh)) in enumerate(stick_boards.items())
     ] + [
+        {"file": fname, "title": BULK_OPTIONS[fname][1], "page": "page-5",
+         "x": i * GX, "y": 0, "w": W, "h": KEYS_H}
+        for i, fname in enumerate(BULK_OPTIONS)
+    ] + [
         {"file": fname, "title": PAD_OPTIONS[fname][1], "page": "page-3",
          "x": (i % 3) * (560 + 100), "y": (i // 3) * (300 + 140), "w": pw, "h": ph}
         for i, (fname, (pw, ph)) in enumerate(pad_boards.items())
     ],
     "pages": [{"id": "page-1", "name": "Screens"}, {"id": "page-4", "name": "Screens · Light"},
-              {"id": "page-2", "name": "Stick directions"}, {"id": "page-3", "name": "Pad styles"}],
+              {"id": "page-2", "name": "Stick directions"}, {"id": "page-3", "name": "Pad styles"},
+              {"id": "page-5", "name": "Bulk delete (prototype)"}],
     "launch": {"view": "canvas", "page": "page-4"},
 }
 with open(os.path.join(OUT, "canvas.json"), "w", encoding="utf-8") as f:

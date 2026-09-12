@@ -147,6 +147,42 @@
       "h": 360
     },
     {
+      "file": "BulkFinal.dc.html",
+      "title": "Keys \u00b7 bulk delete (chosen)",
+      "page": "page-5",
+      "x": 0,
+      "y": 0,
+      "w": 1040,
+      "h": 1100
+    },
+    {
+      "file": "BulkA.dc.html",
+      "title": "Option A \u00b7 Buttons row",
+      "page": "page-5",
+      "x": 1140,
+      "y": 0,
+      "w": 1040,
+      "h": 1100
+    },
+    {
+      "file": "BulkB.dc.html",
+      "title": "Option B \u00b7 Selection toolbar",
+      "page": "page-5",
+      "x": 2280,
+      "y": 0,
+      "w": 1040,
+      "h": 1100
+    },
+    {
+      "file": "BulkC.dc.html",
+      "title": "Option C \u00b7 Visual first",
+      "page": "page-5",
+      "x": 3420,
+      "y": 0,
+      "w": 1040,
+      "h": 1100
+    },
+    {
       "file": "PadClassic.dc.html",
       "title": "Classic",
       "page": "page-3",
@@ -208,6 +244,10 @@
     {
       "id": "page-3",
       "name": "Pad styles"
+    },
+    {
+      "id": "page-5",
+      "name": "Bulk delete (prototype)"
     }
   ],
   "launch": {
