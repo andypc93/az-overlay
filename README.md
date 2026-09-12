@@ -110,9 +110,11 @@ changes. It controls the settings window; overlay colors are set separately.
 
 > **Every change is saved automatically.** A layout always lives in its own file,
 > and the app reopens your last selected layout at startup.
-> **More → Save as new layout…** keeps a separate copy; **More → Delete saved
-> layout…** removes a layout and switches to the next one (deleting the last
-> layout brings back the bundled default).
+> Layout names are unique: creating one with a name already in use adds "(2)".
+> **More → Rename layout…** renames it, **More → Duplicate layout…** keeps a
+> separate copy, and **More → Delete saved layout…** removes a layout and
+> switches to the next one (deleting the last layout brings back the bundled
+> default).
 
 ## Supported devices
 

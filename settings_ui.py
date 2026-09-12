@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 import templates
 from gamepad import is_gamepad_input
 from overlay import (APP_NAME, DEFAULT_COLORS, GAMEPAD_LABELS, PAD_STYLES, PROFILE_KEYS, STICK_STYLES, delete_profile,
-                     seed_default_layouts,
+                     create_profile, layout_name_taken, rename_profile, seed_default_layouts,
                      KEY_TEXT_FLAGS, draw_pad, fit_key_font, key_text_rect,
                      label_for_token, list_profiles, load_profile, migrate, pad_inputs, parse_input,
                      save_config, save_profile, vks_for_label)
@@ -598,6 +598,58 @@ class TemplateDialog(QDialog):
         return templates.build(self.device.currentText(), self.template.currentText(),
                                self.layout_combo.currentText() or None)
 
+    def result_name(self):
+        """Typed name, or the template's suggestion when left blank."""
+        return self.name.text().strip() or templates.suggested_name(
+            self.device.currentText(), self.template.currentText(), self.layout_combo.currentText() or None)
+
+
+class RenameLayoutDialog(QDialog):
+    """Rename the current layout. A taken name disables OK and says why."""
+
+    def __init__(self, parent, current):
+        super().__init__(parent)
+        self.current = current
+        self.setWindowTitle("Rename layout")
+        self.setPalette(parent.palette())
+        self.setStyleSheet(parent.styleSheet())
+        self.setMinimumWidth(380)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(20, 18, 20, 18)
+        v.setSpacing(10)
+        f = form()
+        self.name = QLineEdit(current)
+        self.name.setAccessibleName("Layout name")
+        f.addRow("Name", self.name)
+        v.addLayout(f)
+        self.hint = muted("")
+        v.addWidget(self.hint)
+        self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Rename")
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setObjectName("primary")
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        v.addWidget(self.buttons)
+        self.name.textChanged.connect(self._check)
+        self.name.selectAll()
+        self._check()
+
+    def _check(self, *_):
+        text = self.name.text().strip()
+        ok = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
+        if not text:
+            ok.setEnabled(False)
+            self.hint.setText("Type a name.")
+        elif layout_name_taken(text, exclude=self.current):
+            ok.setEnabled(False)
+            self.hint.setText(f"A layout named '{text}' already exists.")
+        else:
+            ok.setEnabled(True)
+            self.hint.setText("")
+
+    def result_name(self):
+        return self.name.text().strip()
+
 
 # ---- the window ------------------------------------------------------------
 class SettingsWindow(QWidget):
@@ -706,7 +758,8 @@ class SettingsWindow(QWidget):
         more.setObjectName("quiet")
         more.setAccessibleName("Layout options")
         menu = QMenu(more)
-        menu.addAction("Save as new layout…", self._profile_save_as)
+        menu.addAction("Rename layout…", self._profile_rename)
+        menu.addAction("Duplicate layout…", self._profile_duplicate)
         self.delete_layout_action = menu.addAction("Delete saved layout…", self._profile_delete)
         more.setMenu(menu)
         h.addWidget(more)
@@ -1564,13 +1617,13 @@ class SettingsWindow(QWidget):
             return
         if not self._save_now():
             return
-        name = dlg.name.text().strip() or dlg.device.currentText()
+        name = dlg.result_name()
         prof = dlg.result_profile()
         prof["colors"] = dict(self.cfg["colors"])  # keep the user's colours
         prof["x"], prof["y"], prof["opacity"] = self.cfg["x"], self.cfg["y"], self.cfg.get("opacity", 0.85)
         migrate(prof)
         try:
-            name = save_profile(name, prof)
+            name = create_profile(name, prof)
         except (OSError, ValueError) as e:
             self._show_error(f"Could not save: {e}")
             return
@@ -1603,22 +1656,41 @@ class SettingsWindow(QWidget):
             return
         self._load_layout(name)
 
-    def _profile_save_as(self):
-        name, ok = QInputDialog.getText(self, "Save layout", "Layout name:",
-                                        text=self.cfg.get("profile", ""))
+    def _profile_rename(self):
+        current = self.cfg.get("profile")
+        if not current:
+            return
+        dlg = RenameLayoutDialog(self, current)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        new = dlg.result_name()
+        if not new or not self._save_now():
+            return
+        try:
+            self.cfg["profile"] = rename_profile(current, new)
+        except (OSError, ValueError) as e:
+            self._show_error(f"Could not rename: {e}")
+            return
+        self._refresh_profiles()
+        self._save_now()
+
+    def _profile_duplicate(self):
+        current = self.cfg.get("profile", "")
+        name, ok = QInputDialog.getText(self, "Duplicate layout", "Name for the copy:",
+                                        text=f"{current} copy" if current else "")
         name = name.strip()
         if not ok or not name:
             return
         if not self._save_now():
             return
         try:
-            name = save_profile(name, self.cfg)
+            name = create_profile(name, self.cfg)
         except (OSError, ValueError) as e:
-            self._show_error(f"Could not save: {e}")
+            self._show_error(f"Could not duplicate: {e}")
             return
         self.cfg["profile"] = name
         self._refresh_profiles()
-        self._schedule_save()
+        self._save_now()
 
     def _profile_delete(self):
         if not self.cfg.get("profile"):

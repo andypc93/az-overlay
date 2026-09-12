@@ -309,6 +309,94 @@ def test_deleting_last_layout_reseeds_the_default(editor, monkeypatch):
     assert overlay.load_config()["x"] != 1234
 
 
+def _menu_actions(editor):
+    return [a.text() for a in editor.findChildren(settings_ui.QMenu)[0].actions()]
+
+
+def test_more_menu_offers_rename_and_duplicate_not_save_as(editor):
+    actions = _menu_actions(editor)
+    assert "Rename layout…" in actions and "Duplicate layout…" in actions
+    assert not any(a.startswith("Save as") for a in actions)
+
+
+def test_new_layout_with_blank_name_uses_template_suggestion(editor, monkeypatch):
+    monkeypatch.setattr(settings_ui, "save_config", overlay.save_config)
+
+    def accept(dlg):
+        dlg.name.setText("   ")
+        return settings_ui.QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(settings_ui.TemplateDialog, "exec", accept)
+    editor._new_from_template()
+    assert editor.cfg["profile"] == "Azeron Cyborg II"
+    assert "Azeron Cyborg II" in overlay.list_profiles()
+
+
+def test_new_layout_with_taken_name_gets_a_suffix(editor, monkeypatch):
+    monkeypatch.setattr(settings_ui, "save_config", overlay.save_config)
+    before = overlay.load_profile("Test saved layout")
+
+    def accept(dlg):
+        dlg.name.setText("test saved layout")
+        return settings_ui.QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(settings_ui.TemplateDialog, "exec", accept)
+    editor._new_from_template()
+    assert editor.cfg["profile"] == "test saved layout (2)"
+    assert overlay.load_profile("Test saved layout") == before
+
+
+def test_rename_dialog_refuses_taken_names_inline(editor):
+    overlay.save_profile("Other layout", editor.cfg)
+    dlg = settings_ui.RenameLayoutDialog(editor, "Test saved layout")
+    ok = dlg.buttons.button(settings_ui.QDialogButtonBox.StandardButton.Ok)
+    assert dlg.name.text() == "Test saved layout" and ok.isEnabled()
+    dlg.name.setText("other layout")
+    assert not ok.isEnabled() and not dlg.hint.text() == ""
+    dlg.name.setText("Fresh name")
+    assert ok.isEnabled()
+    dlg.name.setText("   ")
+    assert not ok.isEnabled()
+
+
+def test_rename_updates_file_and_current_layout(editor, monkeypatch):
+    monkeypatch.setattr(settings_ui, "save_config", overlay.save_config)
+
+    def accept(dlg):
+        dlg.name.setText("Renamed layout")
+        return settings_ui.QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(settings_ui.RenameLayoutDialog, "exec", accept)
+    editor.sp_x.setValue(555)
+    editor._profile_rename()
+    assert overlay.list_profiles() == ["Renamed layout"]
+    assert editor.cfg["profile"] == "Renamed layout"
+    assert editor.profile_combo.currentText() == "Renamed layout"
+    assert overlay.load_config()["profile"] == "Renamed layout"
+    assert overlay.load_profile("Renamed layout")["x"] == 555
+
+
+def test_duplicate_defaults_to_copy_name_and_switches_to_it(editor, monkeypatch):
+    monkeypatch.setattr(settings_ui, "save_config", overlay.save_config)
+    seen = {}
+
+    def get_text(parent, title, label, text=""):
+        seen["default"] = text
+        return text, True
+
+    monkeypatch.setattr(settings_ui.QInputDialog, "getText", get_text)
+    editor.sp_x.setValue(321)
+    editor._profile_duplicate()
+    assert seen["default"] == "Test saved layout copy"
+    assert sorted(overlay.list_profiles()) == ["Test saved layout", "Test saved layout copy"]
+    assert editor.cfg["profile"] == "Test saved layout copy"
+    assert overlay.load_profile("Test saved layout")["x"] == 321
+    editor.sp_x.setValue(654)
+    QTest.qWait(600)
+    assert overlay.load_profile("Test saved layout copy")["x"] == 654
+    assert overlay.load_profile("Test saved layout")["x"] == 321
+
+
 def test_named_layout_autosaves_without_closing(editor, monkeypatch):
     monkeypatch.setattr(settings_ui, "save_config", overlay.save_config)
     editor.sp_x.setValue(1234)

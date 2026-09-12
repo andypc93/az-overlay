@@ -410,6 +410,45 @@ def delete_profile(name):
         pass
 
 
+def layout_name_key(name):
+    """What makes two layout names the same: the sanitised file stem, case-folded."""
+    return os.path.splitext(os.path.basename(_profile_path(name)))[0].casefold()
+
+
+def layout_name_taken(name, exclude=None):
+    """True if a layout with this name (by key) exists, ignoring `exclude`."""
+    key = layout_name_key(name)
+    skip = layout_name_key(exclude) if exclude else None
+    return any(layout_name_key(n) == key for n in list_profiles() if layout_name_key(n) != skip)
+
+
+def unique_layout_name(name):
+    """`name`, or `name (2)`, `name (3)`, ... until it is free."""
+    base = "".join(ch for ch in name if ch not in '\\/:*?"<>|').strip() or name
+    if not layout_name_taken(base):
+        return base
+    n = 2
+    while layout_name_taken(f"{base} ({n})"):
+        n += 1
+    return f"{base} ({n})"
+
+
+def create_profile(name, cfg):
+    """Save `cfg` as a new layout, never overwriting an existing name."""
+    return save_profile(unique_layout_name(name), cfg)
+
+
+def rename_profile(old, new):
+    """Rename a layout file. Raises ValueError when `new` is taken by another layout."""
+    new = new.strip()
+    if layout_name_taken(new, exclude=old):
+        raise ValueError(f"A layout named '{new}' already exists")
+    src, dst = _profile_path(old), _profile_path(new)
+    if os.path.abspath(src) != os.path.abspath(dst):
+        os.replace(src, dst)
+    return os.path.splitext(os.path.basename(dst))[0]
+
+
 KEY_TEXT_FLAGS = Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap
 STICK_LABEL_FLAGS = Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight
 

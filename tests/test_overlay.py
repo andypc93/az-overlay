@@ -74,6 +74,40 @@ def test_profile_name_sanitised(tmp_path, monkeypatch):
         overlay.save_profile("///", cfg)
 
 
+def test_create_profile_suffixes_instead_of_overwriting(tmp_path, monkeypatch):
+    cfg = overlay.load_config()
+    monkeypatch.setattr(overlay, "PROFILE_DIR", str(tmp_path))
+    assert overlay.create_profile("Azeron Cyborg II", dict(cfg, x=1)) == "Azeron Cyborg II"
+    assert overlay.create_profile("Azeron Cyborg II", dict(cfg, x=2)) == "Azeron Cyborg II (2)"
+    assert overlay.create_profile("azeron cyborg ii ", dict(cfg, x=3)) == "azeron cyborg ii (3)"
+    assert overlay.load_profile("Azeron Cyborg II")["x"] == 1
+    assert sorted(overlay.list_profiles()) == ["Azeron Cyborg II", "Azeron Cyborg II (2)", "azeron cyborg ii (3)"]
+
+
+def test_layout_names_collide_case_insensitively_after_sanitising(tmp_path, monkeypatch):
+    cfg = overlay.load_config()
+    monkeypatch.setattr(overlay, "PROFILE_DIR", str(tmp_path))
+    overlay.save_profile("Cyborg", cfg)
+    assert overlay.layout_name_taken("cyborg ")
+    assert overlay.layout_name_taken("Cy:borg")
+    assert not overlay.layout_name_taken("Cyborg 2")
+    assert not overlay.layout_name_taken("cyborg", exclude="Cyborg")
+
+
+def test_rename_profile_moves_the_file_and_refuses_taken_names(tmp_path, monkeypatch):
+    cfg = overlay.load_config()
+    monkeypatch.setattr(overlay, "PROFILE_DIR", str(tmp_path))
+    overlay.save_profile("Old", dict(cfg, x=5))
+    overlay.save_profile("Other", dict(cfg, x=6))
+    assert overlay.rename_profile("Old", "New") == "New"
+    assert sorted(overlay.list_profiles()) == ["New", "Other"]
+    assert overlay.load_profile("New")["x"] == 5
+    with pytest.raises(ValueError):
+        overlay.rename_profile("New", "other")
+    assert sorted(overlay.list_profiles()) == ["New", "Other"]
+    assert overlay.load_profile("Other")["x"] == 6
+
+
 @pytest.mark.parametrize("remembered, expected", [("Z layout", "Z layout"), ("Deleted layout", "A layout"), ("", "A layout")])
 def test_startup_restores_saved_layout(remembered, expected, tmp_path, monkeypatch):
     cfg = overlay.load_config()
