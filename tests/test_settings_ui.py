@@ -276,33 +276,36 @@ def test_switch_flushes_layout_edits_and_remembers_selection(editor, monkeypatch
     assert editor.cfg["x"] == 1234
 
 
-def test_unnamed_edits_are_not_saved_on_close(editor, monkeypatch):
+def _buttons(widget):
+    return [b.text() for b in widget.findChildren(settings_ui.QPushButton)]
+
+
+def test_header_has_no_save_button(editor):
+    assert "Save layout" not in _buttons(editor)
+
+
+def test_deleting_current_layout_switches_to_first_remaining(editor, monkeypatch):
     monkeypatch.setattr(settings_ui, "save_config", overlay.save_config)
-    before = overlay.load_config()
-    editor.cfg["profile"] = ""
+    monkeypatch.setattr(settings_ui.QMessageBox, "question", lambda *args: settings_ui.QMessageBox.StandardButton.Yes)
+    overlay.save_profile("Another layout", dict(editor.cfg, x=432))
     editor._refresh_profiles()
-    assert editor.profile_combo.currentIndex() == -1
-    assert not editor.delete_layout_action.isEnabled()
-    editor.sp_x.setValue(1234)
-    editor.theme_combo.setCurrentIndex(editor.theme_combo.findData("light"))
-    editor.close()
-    restored = overlay.load_config()
-    assert restored["profile"] == before["profile"]
-    assert restored["x"] == before["x"]
-    assert restored["theme"] == "light"
-    assert overlay.load_profile(before["profile"])["x"] == before["x"]
+    editor._profile_delete()
+    assert overlay.list_profiles() == ["Another layout"]
+    assert editor.cfg["profile"] == "Another layout" and editor.cfg["x"] == 432
+    assert editor.profile_combo.currentText() == "Another layout"
+    assert overlay.load_config()["profile"] == "Another layout"
 
 
-def test_delete_does_not_recreate_layout_from_pending_save(editor, monkeypatch):
+def test_deleting_last_layout_reseeds_the_default(editor, monkeypatch):
     monkeypatch.setattr(settings_ui, "save_config", overlay.save_config)
     monkeypatch.setattr(settings_ui.QMessageBox, "question", lambda *args: settings_ui.QMessageBox.StandardButton.Yes)
     editor.sp_x.setValue(1234)
     editor._profile_delete()
     editor.close()
-    assert overlay.list_profiles() == []
-    assert editor.profile_combo.count() == 0
-    assert editor.profile_combo.currentIndex() == -1
-    assert overlay.load_config()["profile"] == ""
+    assert overlay.list_profiles() == ["Cyborg 2 default"]
+    assert editor.cfg["profile"] == "Cyborg 2 default"
+    assert editor.profile_combo.currentText() == "Cyborg 2 default"
+    assert overlay.load_config()["profile"] == "Cyborg 2 default"
     assert overlay.load_config()["x"] != 1234
 
 

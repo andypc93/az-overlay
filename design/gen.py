@@ -1067,6 +1067,39 @@ HEADER_OPTIONS.update({
 })
 HEADER_SIDEBARS = {"HeaderE.dc.html": sidebar_brand}
 
+
+# Final (user, 2026-09-12): Option F header without the Theme control; Theme moves to Appearance.
+def header_final():
+    sub = f'<div style="color: {T["accent"]}; font-size: {9*PT:.2f}px;">Every move. On display.</div>'
+    return _header_shell(
+        f'<div style="display: flex; align-items: center; gap: 10px;">{_title_block(sub)}{_actions()}</div>',
+    )
+
+
+def appearance_page_final():
+    """Appearance with a Settings theme card at the top: the Theme selector's new home."""
+    theme_card = card(section("Settings window"),
+                      form(form_row("Theme", combo("Dark", width=160), label_w=56)),
+                      muted("Dark or light for this window. Overlay colors are set below."))
+    c0 = card(section("Preview"), pad_preview())
+    c1 = card(section("Key text"),
+              form(form_row("Font", combo("Segoe UI", width=200), label_w=56),
+                   form_row("Size", stepper("13 pt"), label_w=56),
+                   form_row("Weight", switch("Bold", on=True), label_w=56)),
+              extra="flex: 1;")
+    grid_cells = [f'<div></div>', muted("Idle"), muted("Pressed")]
+    for part, text in (("fill", "Fill"), ("outline", "Border"), ("text", "Text")):
+        grid_cells += [f'<div>{text}</div>', color_button(C[f"idle_{part}"]), color_button(C[f"pressed_{part}"])]
+    grid = (f'<div style="display: grid; grid-template-columns: 56px 126px 126px; column-gap: 16px; row-gap: 8px; align-items: center;">'
+            + "".join(grid_cells) + '</div>')
+    c2 = card(section("Colors"), grid, f'<div style="display: flex;">{button("Reset colors", kind="quiet")}</div>', extra="flex: 1;")
+    columns = f'<div style="display: flex; gap: 16px; align-items: stretch;">{c1}{c2}</div>'
+    return window("Appearance", page("Appearance", "Make it yours. Preview your font and colors as you edit.", theme_card, c0, columns),
+                  height=H + 120, head=header_final())
+
+
+HEADER_OPTIONS["HeaderFinal.dc.html"] = (header_final, "Header · chosen")
+
 # ---- emit -----------------------------------------------------------------
 def settings_boards(theme, suffix=""):
     """The five settings pages in one theme. Every builder reads the shared T palette."""
@@ -1103,6 +1136,7 @@ for fname, (style, name, motive, tradeoff) in PAD_OPTIONS.items():
     pad_boards[fname] = (pw, ph)
 for fname, (fn, _title) in BULK_OPTIONS.items():
     boards[fname] = fn()
+boards["AppearanceFinal.dc.html"] = appearance_page_final()
 for fname, (fn, _title) in HEADER_OPTIONS.items():
     _side = HEADER_SIDEBARS.get(fname)
     boards[fname] = window("Layout", _layout_body(), head=fn(), side=_side("Layout") if _side else None)
@@ -1142,6 +1176,9 @@ canvas = {
         {"file": fname, "title": HEADER_OPTIONS[fname][1], "page": "page-6",
          "x": (i % 3) * GX, "y": (i // 3) * (H + 140), "w": W, "h": H}
         for i, fname in enumerate(HEADER_OPTIONS)
+    ] + [
+        {"file": "AppearanceFinal.dc.html", "title": "Appearance · Theme moved here", "page": "page-6",
+         "x": GX, "y": 3 * (H + 140), "w": W, "h": H + 120},
     ] + [
         {"file": fname, "title": PAD_OPTIONS[fname][1], "page": "page-3",
          "x": (i % 3) * (560 + 100), "y": (i // 3) * (300 + 140), "w": pw, "h": ph}

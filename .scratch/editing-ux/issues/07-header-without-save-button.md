@@ -1,7 +1,7 @@
 # Prototype: settings header without a Save button
 
 Type: prototype
-Status: claimed
+Status: resolved
 Blocked by: 03, 04
 
 ## Question
@@ -38,3 +38,25 @@ top right), E (tagline moves to a sidebar wordmark, header is one row), F (tagli
 under the title in accent, one row). All three: Rename / Duplicate / Delete /
 + New layout visible, big layout name with chevron, no autosave note.
 Source: `header_d`/`header_e`/`header_f`, `sidebar_brand` in `design/gen.py`.
+
+### Decision (2026-09-12)
+
+User: "C but move the theme switcher to Appearance." Read as the third option on
+the Round 2 page (Option F, tagline under the title), the page in front of them.
+
+## Answer
+
+Header, one row:
+- Left: the current layout's name as a large title (click to rename), a chevron
+  that opens the layout list, and "Every move. On display." in accent under it.
+- Right: **Rename · Duplicate · Delete (quiet) · + New layout (primary)**.
+- No Save button, no autosave note (overrides the "static note" choice from
+  "Remove the unnamed layout state": the user dropped it on seeing it).
+- No Theme control in the header.
+
+Theme selector moves to the **Appearance** page, in a new "Settings window" card
+at the top ("Theme: Dark/Light", helper text: overlay colors are set below).
+
+Canvas: https://claude.ai/code/artifact/b77b82b1-8362-413a-ac15-64afc1d2a0f7
+("Chosen" page = header + Appearance; "Round 2" and "Round 1" pages keep the
+options). Source `design/gen.py`: `header_final`, `appearance_page_final`.

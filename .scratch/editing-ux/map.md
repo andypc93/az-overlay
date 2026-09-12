@@ -43,6 +43,7 @@ rows/columns easily, (3) every edit persists automatically with no Save button, 
 ## Decisions so far
 
 <!-- one line per resolved ticket: [title](issues/NN-slug.md): gist -->
+- [Prototype: settings header without a Save button](issues/07-header-without-save-button.md): one-row header: big layout title (click to rename) + chevron + tagline under it; Rename / Duplicate / Delete / + New layout on the right; no Save, no autosave note (overrides 03's static note); Theme selector moves to an Appearance "Settings window" card.
 - [Drag anywhere: what stops it today?](issues/01-drag-anywhere-what-blocks-it.md): entry, not reach. Edit mode toggles via Ctrl+Alt+E hotkey (editable), tray "Edit on screen", and the existing button; exits via hotkey/Esc/Done and still on focus loss; overlay pulled back if it touches no screen.
 - [Verify drag reach on the real screen](issues/06-verify-drag-reach-on-screen.md): measured on the real 4K/150% screen: drag reaches every corner and partial off-screen, follows the cursor 1:1, no snap-back, position survives Done editing / apply / restart. Only limit = cursor clamped to screen. Drag complaint must be gating, not reach.
 - [Prototype: Keys page with multi-select and row/column delete](issues/05-keys-page-prototype.md): winner = B's selection toolbar (only while pads selected) above search + table, A's full-width Undo bar under the table, Add controls at the bottom; canvas linked on the ticket.
@@ -52,7 +53,8 @@ rows/columns easily, (3) every edit persists automatically with no Save button, 
 
 ## Not yet specified
 
-- README / Help page copy updates once the Save button is gone.
+None. Every decision on the route is made; README and Help copy updates are
+part of the spec, not a decision.
 
 ## Out of scope
 

@@ -297,16 +297,56 @@ def migrate(cfg):
     return cfg
 
 
+DEFAULT_LAYOUT_NAME = "Cyborg 2 default"
+
+
+def seed_default_layouts():
+    """Put the bundled default layout(s) into PROFILE_DIR. Used on first run and
+    whenever the user has deleted every layout: a layout must always exist."""
+    os.makedirs(PROFILE_DIR, exist_ok=True)
+    for src in (os.path.join(_HERE, "profiles"), os.path.join(_DEFAULTS, "profiles")):
+        if os.path.isdir(src) and os.path.abspath(src) != os.path.abspath(PROFILE_DIR):
+            copied = False
+            for f in os.listdir(src):
+                if f.lower().endswith(".json"):
+                    shutil.copy(os.path.join(src, f), os.path.join(PROFILE_DIR, f))
+                    copied = True
+            if copied:
+                return
+    # No bundled files reachable (running from a source tree whose profiles/ is
+    # empty): build the default from the template instead.
+    import templates
+    prof = templates.azeron_profile("Cyborg II")
+    with open(os.path.join(_DEFAULTS, "config.json"), encoding="utf-8") as f:
+        base = json.load(f)
+    for key in ("colors", "font", "opacity", "x", "y", "scale"):
+        if key in base:
+            prof.setdefault(key, base[key])
+    migrate(prof)
+    save_profile(DEFAULT_LAYOUT_NAME, prof)
+
+
 def load_config():
+    """Globals from config.json plus the current layout from its file. A layout
+    always exists: a missing one falls back to the first on disk, an empty
+    layouts folder is re-seeded, and layout data left in an old config.json is
+    recovered into its own layout once. Never writes config.json itself."""
     with open(CONFIG_PATH, encoding="utf-8") as f:
-        cfg = json.load(f)
-    migrate(cfg)
+        raw = json.load(f)
+    stale = {k: raw[k] for k in PROFILE_KEYS if k in raw}
+    cfg = {k: v for k, v in raw.items() if k not in PROFILE_KEYS}
     if cfg.get("theme") not in ("dark", "light"):
         cfg["theme"] = "dark"
     cfg.setdefault("hotkeys", {})
     cfg["hotkeys"].setdefault("toggle", "O")
     cfg["hotkeys"].setdefault("settings", "S")
     cfg["hotkeys"].setdefault("quit", "Q")
+    if not list_profiles():
+        if stale.get("keys"):
+            migrate(stale)
+            cfg["profile"] = save_profile("Recovered", stale)
+        else:
+            seed_default_layouts()
     names = list_profiles()
     current = cfg.get("profile", "")
     candidates = ([current] if current in names else []) + [n for n in names if n != current]
@@ -316,32 +356,17 @@ def load_config():
             data = load_profile(name)
         except (OSError, ValueError):
             continue
-        for key in PROFILE_KEYS:
-            cfg.pop(key, None)
         cfg.update({key: data[key] for key in PROFILE_KEYS if key in data})
         cfg["profile"] = name
         break
-    return cfg
+    return cfg  # stale layout data in config.json is dropped by the next save
 
 
 def save_config(cfg):
-    """Autosave named layouts; keep unnamed layout edits in memory only."""
-    data = dict(cfg)
+    """Write the current layout to its file and only globals to config.json."""
+    data = {k: v for k, v in cfg.items() if k not in PROFILE_KEYS}
     if cfg.get("profile"):
         data["profile"] = save_profile(cfg["profile"], cfg)
-    else:
-        try:
-            with open(CONFIG_PATH, encoding="utf-8") as f:
-                previous = json.load(f)
-        except FileNotFoundError:
-            with open(os.path.join(_DEFAULTS, "config.json"), encoding="utf-8") as f:
-                previous = json.load(f)
-        for key in PROFILE_KEYS:
-            data.pop(key, None)
-            if key in previous:
-                data[key] = previous[key]
-        remembered = previous.get("profile", "")
-        data["profile"] = remembered if remembered in list_profiles() else ""
     tmp = CONFIG_PATH + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)

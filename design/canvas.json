@@ -237,6 +237,24 @@
       "h": 860
     },
     {
+      "file": "HeaderFinal.dc.html",
+      "title": "Header \u00b7 chosen",
+      "page": "page-6",
+      "x": 0,
+      "y": 2000,
+      "w": 1040,
+      "h": 860
+    },
+    {
+      "file": "AppearanceFinal.dc.html",
+      "title": "Appearance \u00b7 Theme moved here",
+      "page": "page-6",
+      "x": 1140,
+      "y": 3000,
+      "w": 1040,
+      "h": 980
+    },
+    {
       "file": "PadClassic.dc.html",
       "title": "Classic",
       "page": "page-3",

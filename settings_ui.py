@@ -1,4 +1,4 @@
-"""Settings window for the overlay. Edits apply live; named layouts autosave."""
+"""Settings window for the overlay. Edits apply live; every layout autosaves."""
 
 import os
 import tempfile
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 import templates
 from gamepad import is_gamepad_input
 from overlay import (APP_NAME, DEFAULT_COLORS, GAMEPAD_LABELS, PAD_STYLES, PROFILE_KEYS, STICK_STYLES, delete_profile,
+                     seed_default_layouts,
                      KEY_TEXT_FLAGS, draw_pad, fit_key_font, key_text_rect,
                      label_for_token, list_profiles, load_profile, migrate, pad_inputs, parse_input,
                      save_config, save_profile, vks_for_label)
@@ -701,9 +702,6 @@ class SettingsWindow(QWidget):
         self.profile_combo.activated.connect(self._profile_selected)
         self.profile_combo.setAccessibleName("Saved layout")
         h.addWidget(self.profile_combo, 1)
-        b_save = QPushButton("Save layout")
-        b_save.setToolTip("Save an unnamed layout. Changes to saved layouts are saved automatically.")
-        b_save.clicked.connect(self._profile_save)
         more = QPushButton("More")
         more.setObjectName("quiet")
         more.setAccessibleName("Layout options")
@@ -711,7 +709,6 @@ class SettingsWindow(QWidget):
         menu.addAction("Save as new layout…", self._profile_save_as)
         self.delete_layout_action = menu.addAction("Delete saved layout…", self._profile_delete)
         more.setMenu(menu)
-        h.addWidget(b_save)
         h.addWidget(more)
         h.addSpacing(8)
         b_tpl.setObjectName("primary")
@@ -1171,7 +1168,7 @@ class SettingsWindow(QWidget):
             ("Pick your layout", "Choose + New layout and start with a template for your device."),
             ("Find the perfect spot", "On Layout, choose Edit on screen. Drag to move, scroll to resize, then choose Done editing."),
             ("Connect your inputs", "On Keys, select a pad and choose Record input to assign a key or controller button."),
-            ("Make it yours", "Adjust fonts and colors on Appearance. Changes to saved layouts are saved automatically."),
+            ("Make it yours", "Adjust fonts and colors on Appearance. Every change is saved automatically."),
         ), start=1):
             row = QHBoxLayout()
             row.setSpacing(14)
@@ -1604,27 +1601,7 @@ class SettingsWindow(QWidget):
         if not self._save_now():
             self._refresh_profiles()
             return
-        try:
-            data = load_profile(name)
-        except (OSError, ValueError) as e:
-            self._refresh_profiles()
-            self._show_error(f"Could not load: {e}")
-            return
-        for k in PROFILE_KEYS:
-            self.cfg.pop(k, None)
-            if k in data:
-                self.cfg[k] = data[k]
-        self.cfg["profile"] = name
-        self._refresh_profiles()
-        self._rebuild_tabs()
-        self._apply()
-        self._save_now()
-
-    def _profile_save(self):
-        if not self.cfg.get("profile"):
-            self._profile_save_as()
-            return
-        self._save_now()
+        self._load_layout(name)
 
     def _profile_save_as(self):
         name, ok = QInputDialog.getText(self, "Save layout", "Layout name:",
@@ -1649,11 +1626,29 @@ class SettingsWindow(QWidget):
         name = self.profile_combo.currentText()
         if QMessageBox.question(self, "Delete layout", f"Delete layout '{name}'?") != QMessageBox.StandardButton.Yes:
             return
+        self.save_timer.stop()  # a pending autosave must not resurrect the file
         delete_profile(name)
-        if self.cfg.get("profile") == name:
-            self.cfg["profile"] = ""
+        if not list_profiles():
+            seed_default_layouts()
+        self._load_layout(list_profiles()[0])
+
+    def _load_layout(self, name):
+        """Make `name` the current layout: read its file into cfg, rebuild, save."""
+        try:
+            data = load_profile(name)
+        except (OSError, ValueError) as e:
+            self._refresh_profiles()
+            self._show_error(f"Could not load: {e}")
+            return
+        for k in PROFILE_KEYS:
+            self.cfg.pop(k, None)
+            if k in data:
+                self.cfg[k] = data[k]
+        self.cfg["profile"] = name
         self._refresh_profiles()
-        self._schedule_save()
+        self._rebuild_tabs()
+        self._apply()
+        self._save_now()
 
     # ---- save ---------------------------------------------------------
     def _schedule_save(self):

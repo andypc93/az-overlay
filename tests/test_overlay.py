@@ -54,8 +54,8 @@ def test_label_case_insensitive():
 
 
 def test_profile_roundtrip(tmp_path, monkeypatch):
-    monkeypatch.setattr(overlay, "PROFILE_DIR", str(tmp_path))
     cfg = overlay.load_config()
+    monkeypatch.setattr(overlay, "PROFILE_DIR", str(tmp_path))
     cfg["x"] = 999
     overlay.save_profile("my layout", cfg)
     assert overlay.list_profiles() == ["my layout"]
@@ -66,11 +66,12 @@ def test_profile_roundtrip(tmp_path, monkeypatch):
 
 
 def test_profile_name_sanitised(tmp_path, monkeypatch):
+    cfg = overlay.load_config()
     monkeypatch.setattr(overlay, "PROFILE_DIR", str(tmp_path))
-    overlay.save_profile("a/b:c", overlay.load_config())
+    overlay.save_profile("a/b:c", cfg)
     assert overlay.list_profiles() == ["abc"]
     with pytest.raises(ValueError):
-        overlay.save_profile("///", overlay.load_config())
+        overlay.save_profile("///", cfg)
 
 
 @pytest.mark.parametrize("remembered, expected", [("Z layout", "Z layout"), ("Deleted layout", "A layout"), ("", "A layout")])
@@ -88,23 +89,63 @@ def test_startup_restores_saved_layout(remembered, expected, tmp_path, monkeypat
     assert restored["theme"] == "light"
 
 
-def test_no_saved_layout_keeps_temporary_edits_out_of_config(tmp_path, monkeypatch):
+def _globals_only(cfg):
+    return {k: v for k, v in cfg.items() if k not in overlay.PROFILE_KEYS}
+
+
+def test_save_config_writes_layout_to_its_file_and_only_globals_to_config(tmp_path, monkeypatch):
     cfg = overlay.load_config()
-    cfg["profile"] = ""
     monkeypatch.setattr(overlay, "CONFIG_PATH", str(tmp_path / "config.json"))
     monkeypatch.setattr(overlay, "PROFILE_DIR", str(tmp_path / "profiles"))
-    (tmp_path / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
-    original_x = cfg["x"]
-    cfg["x"] += 111
-    cfg["keys"][0]["label"] = "Temporary edit"
+    cfg["profile"] = overlay.save_profile("My layout", cfg)
+    cfg["x"] = 777
     cfg["theme"] = "light"
     overlay.save_config(cfg)
+    on_disk = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    assert set(on_disk) == {"hotkeys", "theme", "profile"}
+    assert on_disk["profile"] == "My layout" and on_disk["theme"] == "light"
+    assert overlay.load_profile("My layout")["x"] == 777
+
+
+def test_startup_reseeds_bundled_default_when_no_layouts_exist(tmp_path, monkeypatch):
+    cfg = overlay.load_config()
+    monkeypatch.setattr(overlay, "CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setattr(overlay, "PROFILE_DIR", str(tmp_path / "profiles"))
+    (tmp_path / "config.json").write_text(json.dumps(_globals_only(cfg)), encoding="utf-8")
     restored = overlay.load_config()
-    assert restored["profile"] == ""
-    assert restored["x"] == original_x
-    assert restored["keys"][0]["label"] != "Temporary edit"
-    assert restored["theme"] == "light"
-    assert overlay.list_profiles() == []
+    assert overlay.list_profiles() == ["Cyborg 2 default"]
+    assert restored["profile"] == "Cyborg 2 default"
+    assert restored["keys"]
+
+
+def test_startup_recovers_layout_from_old_config_when_no_layouts_exist(tmp_path, monkeypatch):
+    cfg = overlay.load_config()
+    monkeypatch.setattr(overlay, "CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setattr(overlay, "PROFILE_DIR", str(tmp_path / "profiles"))
+    cfg["x"] = 4321
+    cfg["profile"] = ""
+    (tmp_path / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+    restored = overlay.load_config()
+    assert overlay.list_profiles() == ["Recovered"]
+    assert restored["profile"] == "Recovered" and restored["x"] == 4321
+    overlay.save_config(restored)
+    on_disk = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    assert "keys" not in on_disk and on_disk["profile"] == "Recovered"
+
+
+def test_startup_drops_stale_layout_keys_when_layouts_exist(tmp_path, monkeypatch):
+    cfg = overlay.load_config()
+    monkeypatch.setattr(overlay, "CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setattr(overlay, "PROFILE_DIR", str(tmp_path / "profiles"))
+    overlay.save_profile("A layout", dict(cfg, x=100))
+    stale = dict(cfg, x=4321, profile="")
+    (tmp_path / "config.json").write_text(json.dumps(stale), encoding="utf-8")
+    restored = overlay.load_config()
+    assert restored["profile"] == "A layout" and restored["x"] == 100
+    assert overlay.list_profiles() == ["A layout"]
+    overlay.save_config(restored)
+    on_disk = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    assert "keys" not in on_disk
 
 
 def test_parse_input_chord_and_alternatives():

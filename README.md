@@ -108,10 +108,11 @@ Choose **Light** or **Dark** in the **Theme** selector at the top of settings.
 Your choice applies immediately and is remembered across restarts and layout
 changes. It controls the settings window; overlay colors are set separately.
 
-> **Saved layouts autosave changes.** The app remembers your last selected layout
-> and reopens it at startup. Unnamed layout edits stay temporary until you choose
-> **Save layout**. **More → Save as new layout…** keeps a separate copy;
-> **More → Delete saved layout…** removes a saved layout.
+> **Every change is saved automatically.** A layout always lives in its own file,
+> and the app reopens your last selected layout at startup.
+> **More → Save as new layout…** keeps a separate copy; **More → Delete saved
+> layout…** removes a layout and switches to the next one (deleting the last
+> layout brings back the bundled default).
 
 ## Supported devices
 
