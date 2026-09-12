@@ -311,16 +311,6 @@ def test_deleting_last_layout_reseeds_the_default(editor, monkeypatch):
     assert overlay.load_config()["x"] != 1234
 
 
-def _menu_actions(editor):
-    return [a.text() for a in editor.findChildren(settings_ui.QMenu)[0].actions()]
-
-
-def test_more_menu_offers_rename_and_duplicate_not_save_as(editor):
-    actions = _menu_actions(editor)
-    assert "Rename layout…" in actions and "Duplicate layout…" in actions
-    assert not any(a.startswith("Save as") for a in actions)
-
-
 def test_new_layout_with_blank_name_uses_template_suggestion(editor, monkeypatch):
     monkeypatch.setattr(settings_ui, "save_config", overlay.save_config)
 
@@ -665,3 +655,61 @@ def test_a_non_delete_edit_discards_the_undo(editor):
     assert not editor.undo_bar.isVisible()
     QTest.keyClick(editor, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
     assert len(editor.cfg["keys"]) == n - 1
+
+
+# ---- ticket 15: one-row header, Theme on Appearance --------------------------
+def _header(editor):
+    return editor.findChild(settings_ui.QFrame, "header")
+
+
+def test_header_shows_the_current_layout_as_its_title(editor, monkeypatch):
+    monkeypatch.setattr(settings_ui, "save_config", overlay.save_config)
+    assert editor.layout_title.text() == "Test saved layout"
+    overlay.save_profile("Another layout", dict(editor.cfg, x=1))
+    editor._refresh_profiles()
+    editor._profile_selected(editor.profile_combo.findText("Another layout"))
+    assert editor.layout_title.text() == "Another layout"
+
+    def accept(dlg):
+        dlg.name.setText("Renamed again")
+        return settings_ui.QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(settings_ui.RenameLayoutDialog, "exec", accept)
+    editor._profile_rename()
+    assert editor.layout_title.text() == "Renamed again"
+
+
+def test_clicking_the_title_opens_rename(editor, monkeypatch):
+    opened = []
+    monkeypatch.setattr(settings_ui.RenameLayoutDialog, "exec",
+                        lambda dlg: opened.append(dlg.name.text()) or settings_ui.QDialog.DialogCode.Rejected)
+    editor.layout_title.click()
+    assert opened == ["Test saved layout"]
+
+
+def test_layout_switcher_lists_layouts_and_switches(editor, monkeypatch):
+    monkeypatch.setattr(settings_ui, "save_config", overlay.save_config)
+    overlay.save_profile("Another layout", dict(editor.cfg, x=77))
+    editor._refresh_profiles()
+    menu = editor.layout_switcher.menu()
+    menu.aboutToShow.emit()
+    names = [a.text() for a in menu.actions()]
+    assert names == ["Another layout", "Test saved layout"]
+    next(a for a in menu.actions() if a.text() == "Another layout").trigger()
+    assert editor.cfg["profile"] == "Another layout" and editor.cfg["x"] == 77
+
+
+def test_header_has_visible_layout_actions_and_nothing_else(editor):
+    header = _header(editor)
+    texts = [b.text() for b in header.findChildren(settings_ui.QPushButton)]
+    assert {"Rename", "Duplicate", "Delete", "+ New layout"} <= set(texts)
+    assert "Save layout" not in texts and "More" not in texts
+    assert not any("save automatically" in lbl.text().lower() for lbl in header.findChildren(settings_ui.QLabel))
+    assert not any(c.accessibleName() == "App theme" for c in header.findChildren(settings_ui.QComboBox))
+    assert any("Every move" in lbl.text() for lbl in header.findChildren(settings_ui.QLabel))
+
+
+def test_theme_selector_lives_on_the_appearance_page(editor):
+    appearance = editor.stack.widget(editor.PAGES.index("Appearance"))
+    assert editor.theme_combo in appearance.findChildren(settings_ui.QComboBox)
+    assert editor.theme_combo not in _header(editor).findChildren(settings_ui.QComboBox)

@@ -46,7 +46,9 @@ console window. Open settings by double-clicking the tray icon or pressing
 ### 1. Choose a layout
 
 Select **+ New layout**, choose your device and template, and give it a name.
-Switch between saved layouts using the selector at the top of settings.
+The current layout's name is the title at the top of settings: click it to
+rename, use the arrow next to it to switch layouts, and **Rename**,
+**Duplicate**, and **Delete** sit beside it.
 
 ### 2. Position the overlay
 
@@ -112,17 +114,17 @@ thumbsticks and d-pads are drawn: **Classic**, **Ring gauge**, **Petals**,
 **Vector**, or **Key cross**, and whether a box is drawn behind each stick. All
 of it is saved with the layout.
 
-Choose **Light** or **Dark** in the **Theme** selector at the top of settings.
-Your choice applies immediately and is remembered across restarts and layout
-changes. It controls the settings window; overlay colors are set separately.
+Choose **Light** or **Dark** in the **Settings window** card at the top of
+**Appearance**. Your choice applies immediately and is remembered across
+restarts and layout changes. It controls the settings window; overlay colors
+are set separately.
 
 > **Every change is saved automatically.** A layout always lives in its own file,
 > and the app reopens your last selected layout at startup.
 > Layout names are unique: creating one with a name already in use adds "(2)".
-> **More → Rename layout…** renames it, **More → Duplicate layout…** keeps a
-> separate copy, and **More → Delete saved layout…** removes a layout and
-> switches to the next one (deleting the last layout brings back the bundled
-> default).
+> **Rename** renames it, **Duplicate** keeps a separate copy, and **Delete**
+> removes a layout and switches to the next one (deleting the last layout brings
+> back the bundled default).
 
 ## Supported devices
 

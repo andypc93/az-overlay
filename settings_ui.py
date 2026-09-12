@@ -9,7 +9,7 @@ from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QGuiApplicati
 from PySide6.QtWidgets import (
     QAbstractItemView, QAbstractSpinBox, QBoxLayout, QCheckBox, QColorDialog, QComboBox, QDialog,
     QDialogButtonBox, QDoubleSpinBox, QFontComboBox, QFormLayout, QFrame, QGridLayout,
-    QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QToolButton,
     QMessageBox, QMenu, QPushButton, QScrollArea, QSlider, QSpinBox, QStackedWidget, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -132,6 +132,12 @@ QPushButton#primary:hover {{ background: {t["accent_hover"]}; }}
 QPushButton#primary:pressed {{ background: {t["accent_hover"]}; border-color: {t["accent_text"]}; }}
 QPushButton#primary:disabled {{ background: {t["field"]}; color: {t["disabled"]}; }}
 QPushButton#quiet {{ background: transparent; color: {t["accent"]}; font-weight: 400; }}
+QPushButton#layoutTitle {{ background: transparent; border: none; padding: 0; font-size: 20pt; font-weight: 700; text-align: left; letter-spacing: -0.5px; }}
+QPushButton#layoutTitle:hover {{ color: {t["accent"]}; }}
+QToolButton#layoutSwitcher {{ background: {t["field"]}; border: 1px solid transparent; border-radius: 8px; padding: 4px; }}
+QToolButton#layoutSwitcher:hover {{ border-color: {t["accent"]}; }}
+QToolButton#layoutSwitcher::menu-indicator {{ image: none; }}
+QLabel#tagline {{ color: {t["accent"]}; }}
 QPushButton#quiet:hover {{ background: {t["selection"]}; }}
 QPushButton#quiet:disabled {{ color: {t["disabled"]}; }}
 QPushButton#disclosure {{ text-align: left; background: {t["card"]}; border: 1px solid {t["line"]}; border-radius: 12px; color: {t["text"]}; padding: 12px 16px; font-weight: 400; }}
@@ -771,53 +777,74 @@ class SettingsWindow(QWidget):
     def _header(self):
         f = QFrame()
         f.setObjectName("header")
-        header = QVBoxLayout(f)
-        header.setContentsMargins(26, 20, 26, 18)
-        header.setSpacing(18)
-        title = QHBoxLayout()
-        h = QHBoxLayout()
+        h = QHBoxLayout(f)
+        h.setContentsMargins(26, 18, 26, 16)
         h.setSpacing(10)
-        tagline = muted("Every move. On display.")
-        tagline.setWordWrap(False)
-        title.addWidget(tagline)
-        title.addStretch(1)
-        theme_label = QLabel("Theme")
-        self.theme_combo = QComboBox()
-        self.theme_combo.addItem("Dark", "dark")
-        self.theme_combo.addItem("Light", "light")
-        self.theme_combo.setCurrentIndex(1 if self.cfg.get("theme") == "light" else 0)
-        self.theme_combo.setMinimumWidth(100)
-        self.theme_combo.setAccessibleName("App theme")
-        self.theme_combo.setToolTip("Choose the settings window's appearance")
-        theme_label.setBuddy(self.theme_combo)
-        self.theme_combo.currentIndexChanged.connect(self._theme_changed)
-        title.addWidget(theme_label)
-        title.addWidget(self.theme_combo)
-        header.addLayout(title)
-        header.addLayout(h)
-        b_tpl = QPushButton("+ New layout")
-        b_tpl.setToolTip("Create a layout from a template: Azeron, keyboards, Xbox, PlayStation")
-        b_tpl.clicked.connect(self._new_from_template)
-        h.addWidget(muted("Layout"))
+        left = QVBoxLayout()
+        left.setSpacing(2)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        self.layout_title = QPushButton()
+        self.layout_title.setObjectName("layoutTitle")
+        self.layout_title.setFlat(True)
+        self.layout_title.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.layout_title.setToolTip("Rename this layout")
+        self.layout_title.setAccessibleName("Current layout")
+        self.layout_title.clicked.connect(self._profile_rename)
+        self.layout_switcher = QToolButton()
+        self.layout_switcher.setObjectName("layoutSwitcher")
+        self.layout_switcher.setArrowType(Qt.ArrowType.DownArrow)
+        self.layout_switcher.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.layout_switcher.setToolTip("Switch layout")
+        self.layout_switcher.setAccessibleName("Switch layout")
+        switcher_menu = QMenu(self.layout_switcher)
+        switcher_menu.aboutToShow.connect(self._fill_layout_menu)
+        self.layout_switcher.setMenu(switcher_menu)
+        # The list of layouts lives in a hidden combo: one model for the switcher menu and callers.
         self.profile_combo = QComboBox()
-        self.profile_combo.setMinimumWidth(200)
+        self.profile_combo.hide()
         self.profile_combo.activated.connect(self._profile_selected)
         self.profile_combo.setAccessibleName("Saved layout")
-        h.addWidget(self.profile_combo, 1)
-        more = QPushButton("More")
-        more.setObjectName("quiet")
-        more.setAccessibleName("Layout options")
-        menu = QMenu(more)
-        menu.addAction("Rename layout…", self._profile_rename)
-        menu.addAction("Duplicate layout…", self._profile_duplicate)
-        self.delete_layout_action = menu.addAction("Delete saved layout…", self._profile_delete)
-        more.setMenu(menu)
-        h.addWidget(more)
-        h.addSpacing(8)
+        title_row.addWidget(self.layout_title)
+        title_row.addWidget(self.layout_switcher)
+        title_row.addStretch(1)
+        left.addLayout(title_row)
+        tagline = QLabel("Every move. On display.")
+        tagline.setObjectName("tagline")
+        left.addWidget(tagline)
+        h.addLayout(left, 1)
+        b_rename = QPushButton("Rename")
+        b_rename.setToolTip("Rename this layout")
+        b_rename.clicked.connect(self._profile_rename)
+        b_dup = QPushButton("Duplicate")
+        b_dup.setToolTip("Keep a separate copy of this layout and switch to it")
+        b_dup.clicked.connect(self._profile_duplicate)
+        self.btn_delete_layout = QPushButton("Delete")
+        self.btn_delete_layout.setObjectName("quiet")
+        self.btn_delete_layout.setToolTip("Delete this layout and switch to the next one")
+        self.btn_delete_layout.clicked.connect(self._profile_delete)
+        self.delete_layout_action = self.btn_delete_layout  # older callers
+        b_tpl = QPushButton("+ New layout")
         b_tpl.setObjectName("primary")
+        b_tpl.setToolTip("Create a layout from a template: Azeron, keyboards, Xbox, PlayStation")
+        b_tpl.clicked.connect(self._new_from_template)
+        for b in (b_rename, b_dup, self.btn_delete_layout):
+            h.addWidget(b)
+        h.addSpacing(8)
         h.addWidget(b_tpl)
         self._refresh_profiles()
         return f
+
+    def _fill_layout_menu(self):
+        menu = self.layout_switcher.menu()
+        menu.clear()
+        current = self.cfg.get("profile", "")
+        for i in range(self.profile_combo.count()):
+            name = self.profile_combo.itemText(i)
+            act = menu.addAction(name)
+            act.setCheckable(True)
+            act.setChecked(name == current)
+            act.triggered.connect(lambda _checked=False, i=i: self._profile_selected(i))
 
     def _footer(self):
         f = QFrame()
@@ -1139,6 +1166,21 @@ class SettingsWindow(QWidget):
                           disclosure("Sticks & d-pads", c2))
 
     def _appearance_page(self):
+        ct, lt = card()
+        lt.addWidget(section("Settings window"))
+        ft = form()
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItem("Dark", "dark")
+        self.theme_combo.addItem("Light", "light")
+        self.theme_combo.setCurrentIndex(1 if self.cfg.get("theme") == "light" else 0)
+        self.theme_combo.setMinimumWidth(160)
+        self.theme_combo.setAccessibleName("App theme")
+        self.theme_combo.setToolTip("Dark or light for this window")
+        self.theme_combo.currentIndexChanged.connect(self._theme_changed)
+        ft.addRow("Theme", self.theme_combo)
+        lt.addLayout(ft)
+        lt.addWidget(muted("Dark or light for this window. Overlay colors are set below."))
+
         c0, l0 = card()
         l0.addWidget(section("Preview"))
         self.preview = PadPreview(self.cfg)
@@ -1236,7 +1278,7 @@ class SettingsWindow(QWidget):
         self.stick_box.toggled.connect(lambda on: self._set("stick_box", bool(on)))
         f3.addRow("Background", self.stick_box)
         l3.addLayout(f3)
-        return self._page("Appearance", "Make it yours. Preview your font and colors as you edit.", c0, controls, c_pads, c3)
+        return self._page("Appearance", "Make it yours. Preview your font and colors as you edit.", ct, c0, controls, c_pads, c3)
 
     def _about_page(self):
         overview, overview_layout = card()
@@ -1806,7 +1848,8 @@ class SettingsWindow(QWidget):
         current = self.cfg.get("profile", "")
         i = self.profile_combo.findText(current) if current else -1
         self.profile_combo.setCurrentIndex(i)
-        self.delete_layout_action.setEnabled(i >= 0)
+        self.layout_title.setText(current or "No layout")
+        self.btn_delete_layout.setEnabled(i >= 0)
         self.profile_combo.blockSignals(False)
 
     def _profile_selected(self, index):
