@@ -43,6 +43,8 @@ rows/columns easily, (3) every edit persists automatically with no Save button, 
 ## Decisions so far
 
 <!-- one line per resolved ticket: [title](issues/NN-slug.md): gist -->
+- [Drag anywhere: what stops it today?](issues/01-drag-anywhere-what-blocks-it.md): entry, not reach. Edit mode toggles via Ctrl+Alt+E hotkey (editable), tray "Edit on screen", and the existing button; exits via hotkey/Esc/Done and still on focus loss; overlay pulled back if it touches no screen.
+- [Verify drag reach on the real screen](issues/06-verify-drag-reach-on-screen.md): measured on the real 4K/150% screen: drag reaches every corner and partial off-screen, follows the cursor 1:1, no snap-back, position survives Done editing / apply / restart. Only limit = cursor clamped to screen. Drag complaint must be gating, not reach.
 - [Prototype: Keys page with multi-select and row/column delete](issues/05-keys-page-prototype.md): winner = B's selection toolbar (only while pads selected) above search + table, A's full-width Undo bar under the table, Add controls at the bottom; canvas linked on the ticket.
 - [New layout creation and naming](issues/04-new-layout-creation-flow.md): creation already autosaves; names unique case-insensitively after filename sanitising; Create auto-suffixes "(2)" on collision, blank name = template suggestion; Rename added (collision rejected inline); "Save as new" becomes Duplicate ("<name> copy", switches to copy); new layouts inherit colors/position/opacity.
 - [Remove the unnamed layout state](issues/03-no-unnamed-layout-state.md): every layout always named + on disk, Save button gone; empty profiles/ re-seeds bundled default; delete current -> first in list, deleting the last one allowed; word is "layout"; config.json = globals only with one-time "Recovered" migration; static "Changes save automatically" header text.
@@ -50,8 +52,6 @@ rows/columns easily, (3) every edit persists automatically with no Save button, 
 
 ## Not yet specified
 
-- Whether on-screen editing should be entered from the overlay itself (e.g. hotkey
-  or tray toggle) rather than only from the settings Layout page. Depends on 01.
 - README / Help page copy updates once the Save button is gone.
 
 ## Out of scope

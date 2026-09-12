@@ -189,9 +189,9 @@ def page(title, description, *cards):
             f'{muted(description)}<div style="height: 4px;"></div>' + "".join(cards) + '</div>')
 
 
-def window(active, body, height=H):
+def window(active, body, height=H, head=None, side=None):
     return (f'<div style="width: {W}px; height: {height}px; display: flex; flex-direction: column; background: {T["bg"]}; overflow: hidden;">'
-            f'{header()}<div style="flex: 1; display: flex; min-height: 0;">{sidebar(active)}{body}</div>{footer()}</div>')
+            f'{head or header()}<div style="flex: 1; display: flex; min-height: 0;">{side or sidebar(active)}{body}</div>{footer()}</div>')
 
 
 def doc(inner, extra_css=""):
@@ -930,6 +930,143 @@ BULK_OPTIONS = {
     "BulkC.dc.html": (bulk_c, "Option C · Visual first"),
 }
 
+
+# ---- prototype: settings header without a Save button (wayfinder ticket 07) ---
+# Layouts always autosave, so the header loses "Save layout" and gains Duplicate /
+# Rename. Three structurally different options. Throwaway once one wins.
+def _header_shell(*rows):
+    return (f'<div style="display: flex; flex-direction: column; gap: 18px; background: {T["card"]}; '
+            f'border-bottom: 1px solid {T["line"]}; padding: 20px 26px 18px 26px;">' + "".join(rows) + '</div>')
+
+
+def _tagline_row(right=""):
+    return (f'<div style="display: flex; align-items: center; gap: 10px;">{muted("Every move. On display.", wrap=False)}'
+            f'<div style="flex: 1;"></div>{right}<span>Theme</span>{combo("Dark", width=100)}</div>')
+
+
+def header_a():
+    """Option A: today's row minus Save; Duplicate / Rename / Delete live under More; autosave note under the row."""
+    return _header_shell(
+        _tagline_row(),
+        f'<div style="display: flex; align-items: center; gap: 10px;">{muted("Layout", wrap=False)}'
+        f'{combo("Azeron Cyborg II", flex=1)}{button("More", kind="quiet")}'
+        f'<div style="width: 8px;"></div>{button("+ New layout", kind="primary")}</div>',
+        f'<div style="margin-top: -8px;">{muted("Changes save automatically.")}</div>',
+    )
+
+
+def header_b():
+    """Option B: every layout action visible in one row; autosave note sits with the tagline."""
+    return _header_shell(
+        _tagline_row(muted("Changes save automatically", wrap=False) + '<div style="width: 18px;"></div>'),
+        f'<div style="display: flex; align-items: center; gap: 10px;">{muted("Layout", wrap=False)}'
+        f'{combo("Azeron Cyborg II", flex=1)}{button("Rename")}{button("Duplicate")}{button("Delete", kind="quiet")}'
+        f'<div style="width: 8px;"></div>{button("+ New layout", kind="primary")}</div>',
+    )
+
+
+def header_c():
+    """Option C: the layout name is the title; click it to rename, chevron to switch; actions on the right."""
+    title = (f'<div style="display: flex; align-items: center; gap: 12px;">'
+             f'<span style="font-size: {20*PT:.2f}px; font-weight: 700; letter-spacing: -0.5px;">Azeron Cyborg II</span>{arrow()}'
+             f'<span style="color: {T["muted"]}; font-size: {8*PT:.2f}px; border: 1px solid {T["line"]}; border-radius: 6px; padding: 2px 6px;">click to rename</span></div>')
+    return _header_shell(
+        _tagline_row(),
+        f'<div style="display: flex; align-items: center; gap: 10px;">'
+        f'<div style="display: flex; flex-direction: column; gap: 4px;">{title}{muted("Changes save automatically")}</div>'
+        f'<div style="flex: 1;"></div>{button("Duplicate")}{button("Delete", kind="quiet")}'
+        f'<div style="width: 8px;"></div>{button("+ New layout", kind="primary")}</div>',
+    )
+
+
+def _layout_body():
+    c1 = card(
+        section("Position your overlay"),
+        f'<div style="display: flex;">{button("Edit on screen", kind="primary", min_width=156, min_height=38)}</div>',
+        muted("Drag to reposition. Scroll to resize. Ctrl+Alt+E toggles this from anywhere; Esc or Done editing ends it."),
+        form(slider("Size", 10, "50%"), slider("Opacity", 83, "85%")),
+        disclosure("Precise position &amp; scale"),
+    )
+    return page("Layout", "Get your overlay in the right place, at the right size.",
+                c1, disclosure("Key dimensions"), disclosure("Keyboard shortcuts"))
+
+
+HEADER_OPTIONS = {
+    "HeaderA.dc.html": (header_a, "Option A · More menu"),
+    "HeaderB.dc.html": (header_b, "Option B · Actions in the row"),
+    "HeaderC.dc.html": (header_c, "Option C · Layout name as title"),
+}
+
+
+# Round 2 (user: B's buttons + C's big title, no autosave note, tagline placed better).
+def _title_block(sub=""):
+    return (f'<div style="display: flex; flex-direction: column; gap: 4px;">'
+            f'<div style="display: flex; align-items: center; gap: 12px;">'
+            f'<span style="font-size: {20*PT:.2f}px; font-weight: 700; letter-spacing: -0.5px;">Azeron Cyborg II</span>{arrow()}</div>{sub}</div>')
+
+
+def _actions(theme=False):
+    extra = f'<div style="width: 14px;"></div><span>Theme</span>{combo("Dark", width=100)}' if theme else ""
+    return (f'<div style="flex: 1;"></div>{button("Rename")}{button("Duplicate")}{button("Delete", kind="quiet")}'
+            f'<div style="width: 8px;"></div>{button("+ New layout", kind="primary")}{extra}')
+
+
+def header_d():
+    """Option D: tagline as a small uppercase eyebrow above the title; Theme keeps the top-right corner."""
+    eyebrow = (f'<div style="color: {T["accent"]}; font-size: {8*PT:.2f}px; font-weight: 600; letter-spacing: 2px; '
+               f'text-transform: uppercase;">Every move. On display.</div>')
+    return _header_shell(
+        f'<div style="display: flex; align-items: center; gap: 10px;">{eyebrow}<div style="flex: 1;"></div><span>Theme</span>{combo("Dark", width=100)}</div>',
+        f'<div style="display: flex; align-items: center; gap: 10px;">{_title_block()}{_actions()}</div>',
+    )
+
+
+def header_e():
+    """Option E: tagline leaves the header for a wordmark block at the top of the sidebar; header is one row."""
+    return _header_shell(
+        f'<div style="display: flex; align-items: center; gap: 10px;">{_title_block()}{_actions(theme=True)}</div>',
+    )
+
+
+def sidebar_brand(active):
+    """Sidebar whose Workspace label becomes a wordmark: mark, name, tagline."""
+    mark = (f'<svg width="30" height="30" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="flex: 0 0 auto;">'
+            f'<rect x="0" y="0" width="32" height="32" rx="8" fill="{T["accent"]}"></rect>'
+            f'<rect x="7" y="9" width="7" height="7" rx="2" fill="{T["accent_text"]}"></rect>'
+            f'<rect x="18" y="9" width="7" height="7" rx="2" fill="none" stroke="{T["accent_text"]}" stroke-width="1.6"></rect>'
+            f'<rect x="7" y="19" width="7" height="7" rx="2" fill="none" stroke="{T["accent_text"]}" stroke-width="1.6"></rect>'
+            f'<rect x="18" y="19" width="7" height="7" rx="2" fill="{T["accent_text"]}"></rect></svg>')
+    brand = (f'<div style="display: flex; flex-direction: column; gap: 8px;">'
+             f'<div style="display: flex; align-items: center; gap: 10px;">{mark}<span style="font-weight: 700; font-size: {12*PT:.2f}px; letter-spacing: -0.3px;">AZ-Overlay</span></div>'
+             f'<div style="color: {T["muted"]}; font-size: {9*PT:.2f}px; line-height: 1.35;">Every move.<br>On display.</div></div>')
+    items = []
+    for name in ("Layout", "Keys", "Appearance", "About", "Help"):
+        sel = name == active
+        bg = T["selection"] if sel else "transparent"
+        color = T["accent"] if sel else T["muted"]
+        weight = 600 if sel else 400
+        items.append(f'<div style="display: flex; align-items: center; gap: 12px; padding: 10px; margin: 3px 0; border-radius: 10px; '
+                     f'background: {bg}; color: {color}; font-weight: {weight};">{icon(name)}<span>{name}</span></div>')
+    return (f'<div style="width: 184px; flex: 0 0 auto; display: flex; flex-direction: column; gap: 18px; background: {T["sidebar"]}; '
+            f'border-right: 1px solid {T["line"]}; padding: 24px 12px 20px 12px;">{brand}'
+            f'<div style="display: flex; flex-direction: column;">' + "".join(items) + '</div></div>')
+
+
+def header_f():
+    """Option F: tagline sits under the big title in accent, where the autosave note was; one row, Theme far right."""
+    sub = f'<div style="color: {T["accent"]}; font-size: {9*PT:.2f}px;">Every move. On display.</div>'
+    return _header_shell(
+        f'<div style="display: flex; align-items: center; gap: 10px;">{_title_block(sub)}{_actions(theme=True)}</div>',
+    )
+
+
+HEADER_OPTIONS.update({
+    "HeaderD.dc.html": (header_d, "Option D · Eyebrow tagline"),
+    "HeaderE.dc.html": (header_e, "Option E · Tagline in the sidebar wordmark"),
+    "HeaderF.dc.html": (header_f, "Option F · Tagline under the title"),
+})
+HEADER_SIDEBARS = {"HeaderE.dc.html": sidebar_brand}
+
 # ---- emit -----------------------------------------------------------------
 def settings_boards(theme, suffix=""):
     """The five settings pages in one theme. Every builder reads the shared T palette."""
@@ -966,6 +1103,9 @@ for fname, (style, name, motive, tradeoff) in PAD_OPTIONS.items():
     pad_boards[fname] = (pw, ph)
 for fname, (fn, _title) in BULK_OPTIONS.items():
     boards[fname] = fn()
+for fname, (fn, _title) in HEADER_OPTIONS.items():
+    _side = HEADER_SIDEBARS.get(fname)
+    boards[fname] = window("Layout", _layout_body(), head=fn(), side=_side("Layout") if _side else None)
 for name, inner in boards.items():
     if name in light_boards:
         T.clear()
@@ -999,13 +1139,17 @@ canvas = {
          "x": i * GX, "y": 0, "w": W, "h": KEYS_H}
         for i, fname in enumerate(BULK_OPTIONS)
     ] + [
+        {"file": fname, "title": HEADER_OPTIONS[fname][1], "page": "page-6",
+         "x": (i % 3) * GX, "y": (i // 3) * (H + 140), "w": W, "h": H}
+        for i, fname in enumerate(HEADER_OPTIONS)
+    ] + [
         {"file": fname, "title": PAD_OPTIONS[fname][1], "page": "page-3",
          "x": (i % 3) * (560 + 100), "y": (i // 3) * (300 + 140), "w": pw, "h": ph}
         for i, (fname, (pw, ph)) in enumerate(pad_boards.items())
     ],
     "pages": [{"id": "page-1", "name": "Screens"}, {"id": "page-4", "name": "Screens · Light"},
               {"id": "page-2", "name": "Stick directions"}, {"id": "page-3", "name": "Pad styles"},
-              {"id": "page-5", "name": "Bulk delete (prototype)"}],
+              {"id": "page-5", "name": "Bulk delete (prototype)"}, {"id": "page-6", "name": "Header (prototype)"}],
     "launch": {"view": "canvas", "page": "page-4"},
 }
 with open(os.path.join(OUT, "canvas.json"), "w", encoding="utf-8") as f:
