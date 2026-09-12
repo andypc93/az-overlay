@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 
 import overlay
 import settings_ui
+import templates
 
 
 class PreviewOverlay(QWidget):
@@ -533,3 +534,71 @@ def test_search_sits_directly_above_the_table(editor):
     table_at = next(i for i, it in enumerate(items) if it.widget() is editor.table)
     search_at = next(i for i, it in enumerate(items) if it.layout() is editor.search_row)
     assert table_at == search_at + 1
+
+
+# ---- ticket 13: delete row / delete column -----------------------------------
+def _load_template(editor, prof):
+    editor.cfg["keys"] = [dict(k) for k in prof["keys"]]
+    editor.cfg["sticks"] = [dict(st) for st in prof.get("sticks", [])]
+    editor._fill_table()
+    _show_keys_page(editor)
+
+
+def _labels(editor):
+    return [k["label"] for k in editor.cfg["keys"]]
+
+
+def _select_labels(editor, *labels):
+    rows = [i for i, k in enumerate(editor.cfg["keys"]) if k["label"] in labels]
+    editor.table.clearSelection()
+    for r in rows:
+        QTest.mouseClick(editor.table.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, _row_centre(editor, r))
+    assert editor.selected_pads() == rows
+
+
+def test_delete_column_uses_centre_in_span_on_a_staggered_keyboard(editor):
+    _load_template(editor, templates.keyboard_profile("60%", "US (ANSI)"))
+    before = [dict(k) for k in editor.cfg["keys"]]
+    _select_labels(editor, "Q")
+    editor.btn_delete_column.click()
+    gone = [k["label"] for k in before if k not in editor.cfg["keys"]]
+    assert sorted(gone) == ["1", "A", "Q", "Win"]  # Z (quarter-unit overlap) stays
+    assert "Z" in _labels(editor)
+    assert all(k in before for k in editor.cfg["keys"])  # nobody moved
+
+
+def test_delete_column_on_a_wide_pad_sweeps_its_span(editor):
+    _load_template(editor, templates.keyboard_profile("60%", "US (ANSI)"))
+    _select_labels(editor, "Space")
+    editor.btn_delete_column.click()
+    labels = _labels(editor)
+    assert "Space" not in labels and "E" not in labels and "R" not in labels
+    assert "Q" in labels and "W" in labels
+
+
+def test_delete_column_with_two_columns_selected_removes_both(editor):
+    _load_template(editor, templates.keyboard_profile("60%", "US (ANSI)"))
+    _select_labels(editor, "Q", "W")
+    editor.btn_delete_column.click()
+    labels = _labels(editor)
+    assert not {"1", "Q", "A", "W", "S", "Z", "2"} & set(labels)
+    assert {"3", "X"} <= set(labels)
+
+
+def test_delete_row_removes_the_row_and_leaves_sticks(editor):
+    _load_template(editor, templates.azeron_profile("Cyborg II"))
+    sticks = [dict(st) for st in editor.cfg["sticks"]]
+    target = next(k for k in editor.cfg["keys"] if k["row"] == 3)
+    _select_labels(editor, target["label"])
+    editor.btn_delete_row.click()
+    assert all(k["row"] != 3 for k in editor.cfg["keys"])
+    assert any(k["row"] == 2 for k in editor.cfg["keys"]) and any(k["row"] == 4 for k in editor.cfg["keys"])
+    assert editor.cfg["sticks"] == sticks
+
+
+def test_delete_row_and_column_buttons_follow_the_selection(editor):
+    _show_keys_page(editor)
+    editor.table.clearSelection()
+    assert not editor.btn_delete_row.isEnabled() and not editor.btn_delete_column.isEnabled()
+    editor.table.selectRow(0)
+    assert editor.btn_delete_row.isEnabled() and editor.btn_delete_column.isEnabled()

@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 import templates
 from gamepad import is_gamepad_input
 from overlay import (APP_NAME, DEFAULT_COLORS, GAMEPAD_LABELS, PAD_STYLES, PROFILE_KEYS, STICK_STYLES, delete_profile,
-                     create_profile, layout_name_taken, rename_profile, seed_default_layouts,
+                     create_profile, layout_name_taken, pads_in_lines, rename_profile, seed_default_layouts,
                      KEY_TEXT_FLAGS, draw_pad, fit_key_font, key_text_rect,
                      label_for_token, list_profiles, load_profile, migrate, pad_inputs, parse_input,
                      save_config, save_profile, vks_for_label)
@@ -1009,9 +1009,11 @@ class SettingsWindow(QWidget):
         btn_del.clicked.connect(self._remove_pad)
         bar.addWidget(btn_del)
         self.btn_delete_row = QPushButton("Delete row")
-        self.btn_delete_row.setEnabled(False)
+        self.btn_delete_row.setToolTip("Delete every pad in the row of each selected pad. Sticks stay.")
+        self.btn_delete_row.clicked.connect(lambda: self._delete_lines("row"))
         self.btn_delete_column = QPushButton("Delete column")
-        self.btn_delete_column.setEnabled(False)
+        self.btn_delete_column.setToolTip("Delete every pad in the column of each selected pad. Sticks stay.")
+        self.btn_delete_column.clicked.connect(lambda: self._delete_lines("col"))
         bar.addWidget(self.btn_delete_row)
         bar.addWidget(self.btn_delete_column)
         self.btn_clear_selection = QPushButton("Clear")
@@ -1487,6 +1489,8 @@ class SettingsWindow(QWidget):
         self.btn_capture.setEnabled(len(rows) == 1)
         self.btn_remove_pad.setEnabled(bool(rows))
         self.btn_remove_pad.setText(f"Remove {len(rows)} pads" if len(rows) > 1 else "Remove")
+        self.btn_delete_row.setEnabled(bool(rows))
+        self.btn_delete_column.setEnabled(bool(rows))
         self.selection_bar.setVisible(bool(rows))
         if len(rows) == 1:
             label = self.cfg["keys"][rows[0]].get("label") or "Untitled pad"
@@ -1608,7 +1612,14 @@ class SettingsWindow(QWidget):
         self._apply()
 
     def _remove_pad(self):
-        rows = self.selected_pads()
+        self._delete_pads(self.selected_pads())
+
+    def _delete_lines(self, axis):
+        self._delete_pads(pads_in_lines(self.cfg["keys"], self.selected_pads(), axis))
+
+    def _delete_pads(self, indices):
+        """Remove these pads; every other pad keeps its coordinates."""
+        rows = sorted(set(indices))
         if not rows:
             return
         for r in reversed(rows):

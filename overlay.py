@@ -1293,6 +1293,21 @@ def visible_position(x, y, w, h, screens, margin=VISIBLE_MARGIN):
     return x, y
 
 
+def pads_in_lines(keys, selected, axis):
+    """Indices of every pad in the row ("row") or column ("col") of each selected pad.
+    A pad belongs to a selected pad's line when its centre on that axis lies within
+    the selected pad's span there, so staggered keyboard keys are not caught by a
+    quarter-unit overlap while a wide pad still sweeps its whole span."""
+    size = "w" if axis == "col" else "h"
+    spans = [(keys[i][axis], keys[i][axis] + keys[i].get(size, 1)) for i in selected if 0 <= i < len(keys)]
+    members = set()
+    for i, k in enumerate(keys):
+        centre = k[axis] + k.get(size, 1) / 2
+        if any(lo <= centre < hi for lo, hi in spans):
+            members.add(i)
+    return members
+
+
 def tray_menu(overlay, open_settings):
     """Tray context menu. The "Edit on screen" item mirrors the overlay's edit mode."""
     menu = QMenu()
