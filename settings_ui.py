@@ -5,7 +5,7 @@ import tempfile
 from math import ceil
 
 from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QUrl, QUrlQuery, Property, Signal
-from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QIcon, QLinearGradient, QPainter, QPalette, QPen, QPixmap, QPolygonF
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QLinearGradient, QPainter, QPalette, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QAbstractItemView, QAbstractSpinBox, QBoxLayout, QCheckBox, QColorDialog, QComboBox, QDialog,
     QDialogButtonBox, QDoubleSpinBox, QFontComboBox, QFormLayout, QFrame, QGridLayout,
@@ -16,12 +16,16 @@ from PySide6.QtWidgets import (
 
 import templates
 from gamepad import is_gamepad_input
-from overlay import (APP_NAME, DEFAULT_COLORS, GAMEPAD_LABELS, PROFILE_KEYS, delete_profile,
-                     KEY_TEXT_FLAGS, fit_key_font, key_text_rect,
+from overlay import (APP_NAME, DEFAULT_COLORS, GAMEPAD_LABELS, PAD_STYLES, PROFILE_KEYS, STICK_STYLES, delete_profile,
+                     KEY_TEXT_FLAGS, draw_pad, fit_key_font, key_text_rect,
                      label_for_token, list_profiles, load_profile, migrate, pad_inputs, parse_input,
                      save_config, save_profile, vks_for_label)
 
 SUPPORT_EMAIL = "andres6perez@gmail.com"
+# Display names for overlay.STICK_STYLES, in the same order.
+STICK_STYLE_NAMES = dict(zip(STICK_STYLES, ("Classic", "Ring gauge", "Petals", "Vector", "Key cross")))
+PAD_STYLE_NAMES = dict(zip(PAD_STYLES, ("Classic", "Outline", "Keycap", "Underline", "Pill")))
+PAD_SHAPES = (("rect", "Rounded"), ("circle", "Circle"))
 # Set these to the creator's payment links to enable donations.
 PAYPAL_DONATION_URL = ""
 VENMO_DONATION_URL = "https://venmo.com/andrespc93"
@@ -448,21 +452,14 @@ class PadPreview(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(gradient)
         p.drawRoundedRect(QRectF(self.rect()), 14, 14)
+        shape = "circle" if self.cfg.get("shape") == "circle" else "rect"
+        style = self.cfg.get("pad_style", "classic")
         for x, state in ((x0, "idle"), (x0 + w + gap, "pressed")):
             rect = QRectF(x, y0, w, h)
-            if state == "pressed":
-                glow = QColor(c["pressed_outline"])
-                for i, spread in enumerate((6, 3)):
-                    glow.setAlphaF(0.18 / (i + 1))
-                    p.setPen(QPen(glow, spread * 2))
-                    p.setBrush(Qt.BrushStyle.NoBrush)
-                    p.drawRoundedRect(rect, r, r)
-            p.setBrush(QBrush(c[f"{state}_fill"]))
-            p.setPen(QPen(c[f"{state}_outline"], 1.2 if state == "idle" else 2.2))
-            p.drawRoundedRect(rect, r, r)
-            text_rect = key_text_rect(rect)
+            label_color = draw_pad(p, rect, shape, style, r, c, 1.0 if state == "pressed" else 0.0)
+            text_rect = key_text_rect(rect, shape)
             p.setFont(fit_key_font("Space", font, text_rect, self))
-            p.setPen(c[f"{state}_text"])
+            p.setPen(label_color)
             p.drawText(text_rect, KEY_TEXT_FLAGS, "Space")
             p.setFont(QFont("Segoe UI", 8))
             p.setPen(QColor(theme_colors(self.cfg)["muted"]))
@@ -659,6 +656,13 @@ class SettingsWindow(QWidget):
 
         overlay.config_changed.connect(self._sync_from_overlay)
         overlay.key_captured.connect(self._on_key_captured)
+        # Switching to another app (the game) ends on-screen editing. Otherwise the
+        # overlay stays clickable and scroll-resizable and game input drags/resizes it.
+        QGuiApplication.instance().applicationStateChanged.connect(self._app_state_changed)
+
+    def _app_state_changed(self, state):
+        if state != Qt.ApplicationState.ApplicationActive and self.btn_move.isChecked():
+            self.btn_move.setChecked(False)
 
     # ---- chrome -------------------------------------------------------
     def _header(self):
@@ -1049,7 +1053,51 @@ class SettingsWindow(QWidget):
         self.appearance_columns.setSpacing(16)
         self.appearance_columns.addWidget(c1, 1)
         self.appearance_columns.addWidget(c2, 1)
-        return self._page("Appearance", "Make it yours. Preview your font and colors as you edit.", c0, controls)
+
+        c_pads, l_pads = card()
+        l_pads.addWidget(section("Pads"))
+        l_pads.addWidget(muted("How keys and buttons are drawn. The preview above follows along."))
+        f_pads = form()
+        self.pad_shape_combo = QComboBox()
+        for key, text in PAD_SHAPES:
+            self.pad_shape_combo.addItem(text, key)
+        self.pad_shape_combo.setCurrentIndex(1 if self.cfg.get("shape") == "circle" else 0)
+        self.pad_shape_combo.setMinimumWidth(160)
+        self.pad_shape_combo.setAccessibleName("Pad shape")
+        self.pad_shape_combo.currentIndexChanged.connect(
+            lambda _i: self._set("shape", self.pad_shape_combo.currentData()))
+        f_pads.addRow("Shape", self.pad_shape_combo)
+        self.pad_style_combo = QComboBox()
+        for key in PAD_STYLES:
+            self.pad_style_combo.addItem(PAD_STYLE_NAMES[key], key)
+        self.pad_style_combo.setCurrentIndex(PAD_STYLES.index(self.cfg.get("pad_style", "classic")))
+        self.pad_style_combo.setMinimumWidth(160)
+        self.pad_style_combo.setAccessibleName("Pad style")
+        self.pad_style_combo.currentIndexChanged.connect(
+            lambda _i: self._set("pad_style", self.pad_style_combo.currentData()))
+        f_pads.addRow("Style", self.pad_style_combo)
+        l_pads.addLayout(f_pads)
+
+        c3, l3 = card()
+        l3.addWidget(section("Sticks"))
+        l3.addWidget(muted("How thumbsticks and d-pads are drawn."))
+        f3 = form()
+        self.stick_style_combo = QComboBox()
+        for key in STICK_STYLES:
+            self.stick_style_combo.addItem(STICK_STYLE_NAMES[key], key)
+        self.stick_style_combo.setCurrentIndex(STICK_STYLES.index(self.cfg.get("stick_style", "classic")))
+        self.stick_style_combo.setMinimumWidth(160)
+        self.stick_style_combo.setAccessibleName("Stick style")
+        self.stick_style_combo.currentIndexChanged.connect(
+            lambda _i: self._set("stick_style", self.stick_style_combo.currentData()))
+        f3.addRow("Style", self.stick_style_combo)
+        self.stick_box = Switch("Draw a box behind each stick")
+        self.stick_box.setChecked(bool(self.cfg.get("stick_box", True)))
+        self.stick_box.setToolTip("Off keeps only the ring, petals, or keys, like the plain pads around it.")
+        self.stick_box.toggled.connect(lambda on: self._set("stick_box", bool(on)))
+        f3.addRow("Background", self.stick_box)
+        l3.addLayout(f3)
+        return self._page("Appearance", "Make it yours. Preview your font and colors as you edit.", c0, controls, c_pads, c3)
 
     def _about_page(self):
         overview, overview_layout = card()

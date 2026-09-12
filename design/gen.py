@@ -289,17 +289,47 @@ def appearance_page():
     return window("Appearance", page("Appearance", "Make it yours. Preview your font and colors as you edit.", c0, columns))
 
 
+def tile(svg_body):
+    return (f'<div style="width: 40px; height: 40px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; '
+            f'border-radius: 12px; color: {T["accent"]}; background: {T["selection"]};">'
+            f'<svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="{T["accent"]}" '
+            f'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">{svg_body}</svg></div>')
+
+
+def tile_row(svg_body, heading, desc):
+    return (f'<div style="display: flex; gap: 14px; align-items: flex-start;">{tile(svg_body)}'
+            f'<div style="display: flex; flex-direction: column; gap: 3px; flex: 1;">'
+            f'<div style="font-size: {11*PT:.2f}px; font-weight: 600;">{heading}</div>{muted(desc)}</div></div>')
+
+
+ICON_PERSON = '<circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"></path>'
+ICON_LICENSE = '<rect x="5" y="3" width="14" height="18" rx="2"></rect><line x1="9" y1="8" x2="15" y2="8"></line><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="12" y2="16"></line>'
+ICON_STACK = '<path d="M12 3l9 5-9 5-9-5 9-5z"></path><path d="M3 13l9 5 9-5"></path><path d="M3 17l9 5 9-5"></path>'
+
+
+def hero(section_text, title, body, row, note):
+    return (f'<div style="display: flex; flex-direction: column; gap: 14px; border: 1px solid {T["badge_text"]}; border-radius: 18px; '
+            f'padding: 18px 22px; background: linear-gradient(135deg, {T["selection"]}, {T["card"]});">'
+            f'{section(section_text)}'
+            f'<div style="font-size: {20*PT:.2f}px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.2; text-wrap: pretty;">{title}</div>'
+            f'{muted(body)}<div style="height: 6px;"></div>{row}{muted(note)}</div>')
+
+
 def about_page():
-    overview = card(section("AZ-Overlay"),
-                    muted("A customizable input overlay for Azeron keypads, keyboards, and controllers. Show your inputs as you play "
-                          "with a transparent, click-through overlay and live layout editing."))
-    credits = card(section("Created by Andres Perez"),
-                   muted("Copyright 2026 Andres Perez. Released under the MIT License."),
-                   muted("Built with PySide6, pynput, and the optional pygame-ce controller backend."))
-    donations = card(section("Support AZ-Overlay"),
-                     muted("Enjoying the overlay? A donation helps support its development. Thank you!"),
-                     f'<div style="display: flex; gap: 12px;">{button("Donate with PayPal", disabled=True)}{button("Donate with Venmo")}</div>')
-    return window("About", page("About", "Every move. On display.", overview, credits, donations))
+    overview = hero(
+        "AZ-Overlay",
+        "A customizable input overlay for Azeron keypads, keyboards, and controllers.",
+        "Show your inputs as you play with a transparent, click-through overlay and live layout editing.",
+        f'<div style="display: flex; align-items: center; gap: 16px;"><div style="flex: 1;">Enjoying the overlay? A donation helps support its development. Thank you!</div>'
+        f'{button("Donate with Venmo", kind="primary", min_width=110)}{button("Donate with PayPal", disabled=True)}</div>',
+        "Opens Venmo in your browser. PayPal donations are not available yet.",
+    )
+    credits = card(
+        section("Credits"),
+        tile_row(ICON_PERSON, "Created by Andres Perez", "Copyright 2026 Andres Perez. Released under the MIT License."),
+        tile_row(ICON_STACK, "Built with", "PySide6, pynput, and the optional pygame-ce controller backend."),
+    )
+    return window("About", page("About", "Every move. On display.", overview, credits))
 
 
 def help_page():
@@ -406,6 +436,320 @@ def overlay_page():
     return inner, frame_w, frame_h
 
 
+# ---- stick direction sketches ---------------------------------------------
+import math
+
+S_SCALE = 0.75
+S_W, S_H = 2 * (100 * S_SCALE + 8 * S_SCALE) - 8 * S_SCALE, 2 * (140 * S_SCALE + 8 * S_SCALE) - 8 * S_SCALE  # 156 x 216
+S_R = 7.5
+S_FONT = int(13 * S_SCALE) * PT   # 12px
+S_LBL = int(int(13 * S_SCALE) * 0.75) * PT  # 8px
+DIRS = (("W", 0, -1), ("S", 0, 1), ("A", -1, 0), ("D", 1, 0))
+
+
+def _txt(x, y, text, size, fill, anchor="middle", weight=700, opacity=None):
+    op = f' fill-opacity="{opacity}"' if opacity is not None else ""
+    return (f'<text x="{x:.1f}" y="{y + size * 0.35:.1f}" text-anchor="{anchor}" font-family="{FONT}" '
+            f'font-size="{size:.1f}" font-weight="{weight}" fill="{fill}"{op}>{text}</text>')
+
+
+def _glow(shape_attrs, tag="circle"):
+    return (f'<{tag} {shape_attrs} fill="none" stroke="{C["pressed_outline"]}" stroke-opacity="0.18" stroke-width="12"></{tag}>'
+            f'<{tag} {shape_attrs} fill="none" stroke="{C["pressed_outline"]}" stroke-opacity="0.09" stroke-width="6"></{tag}>')
+
+
+def _box(x, y):
+    return f'<rect x="{x:.1f}" y="{y:.1f}" width="{S_W:.1f}" height="{S_H:.1f}" rx="{S_R}" fill="{C["idle_fill"]}" stroke="{C["idle_outline"]}" stroke-width="1.2"></rect>'
+
+
+def stick_current(x, y, active):
+    cx, cy = x + S_W / 2, y + S_H / 2
+    rad = min(S_W, S_H) * 0.30
+    dy_off = -0.8 if active else 0
+    kx, ky, kr = cx, cy + dy_off * rad * 0.6, rad * 0.42
+    out = _box(x, y)
+    out += f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{rad:.1f}" fill="none" stroke="{C["idle_outline"]}" stroke-width="1.2"></circle>'
+    out += f'<circle cx="{kx:.1f}" cy="{ky:.1f}" r="{kr:.1f}" fill="{C["idle_outline"]}" stroke="{C["idle_outline"]}" stroke-width="1.2"></circle>'
+    out += _txt(x + S_W - 6, y + S_H - 4 - S_LBL * 0.6, "Left Stick", S_LBL, C["idle_text"], anchor="end")
+    for name, dx, dy in DIRS:
+        lit = active and name == "W"
+        px, py, dr = cx + dx * rad * 0.62, cy + dy * rad * 0.62, rad * 0.30
+        if lit:
+            out += _glow(f'cx="{px:.1f}" cy="{py:.1f}" r="{dr:.1f}"')
+        out += (f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{dr:.1f}" fill="{C["pressed_fill"] if lit else C["idle_fill"]}" '
+                f'stroke="{C["idle_outline"]}" stroke-width="{2.2 if lit else 1.2}"></circle>')
+        out += _txt(cx + dx * rad * 1.4, cy + dy * rad * 1.4, name, S_FONT, C["pressed_outline"] if lit else C["idle_text"])
+    return out
+
+
+def stick_ring(x, y, active):
+    """A: ring gauge. Deflection lights an arc on the outer ring; letters sit outside the ring."""
+    cx, cy = x + S_W / 2, y + S_H / 2 + 6
+    ring = 50
+    out = _box(x, y)
+    out += _txt(cx, y + 6 + S_LBL * 0.6, "Left Stick", S_LBL, C["idle_text"], weight=600)
+    out += f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{ring}" fill="none" stroke="{C["idle_outline"]}" stroke-opacity="0.4" stroke-width="1.2"></circle>'
+    for name, dx, dy in DIRS:  # tick marks
+        out += (f'<line x1="{cx + dx * (ring - 5):.1f}" y1="{cy + dy * (ring - 5):.1f}" x2="{cx + dx * (ring + 5):.1f}" y2="{cy + dy * (ring + 5):.1f}" '
+                f'stroke="{C["idle_outline"]}" stroke-opacity="0.6" stroke-width="1.2"></line>')
+    if active:  # arc centred on "up", 70 degrees wide
+        a0, a1 = math.radians(-90 - 35), math.radians(-90 + 35)
+        d = (f'M {cx + ring * math.cos(a0):.1f} {cy + ring * math.sin(a0):.1f} A {ring} {ring} 0 0 1 '
+             f'{cx + ring * math.cos(a1):.1f} {cy + ring * math.sin(a1):.1f}')
+        out += f'<path d="{d}" fill="none" stroke="{C["pressed_outline"]}" stroke-opacity="0.25" stroke-width="14" stroke-linecap="round"></path>'
+        out += f'<path d="{d}" fill="none" stroke="{C["pressed_outline"]}" stroke-width="5" stroke-linecap="round"></path>'
+    ky = cy - (0.8 * ring * 0.55 if active else 0)
+    if active:
+        out += f'<line x1="{cx:.1f}" y1="{cy:.1f}" x2="{cx:.1f}" y2="{ky:.1f}" stroke="{C["pressed_outline"]}" stroke-opacity="0.6" stroke-width="2"></line>'
+    out += f'<circle cx="{cx:.1f}" cy="{ky:.1f}" r="11" fill="{C["pressed_fill"] if active else C["idle_outline"]}"></circle>'
+    for name, dx, dy in DIRS:
+        lit = active and name == "W"
+        out += _txt(cx + dx * (ring + 18), cy + dy * (ring + 18), name, S_FONT, C["pressed_outline"] if lit else C["idle_text"], opacity=None if lit else 0.85)
+    return out
+
+
+def stick_petals(x, y, active):
+    """B: four petals. Each direction is a wedge-shaped key around a small analog dot."""
+    cx, cy = x + S_W / 2, y + S_H / 2
+    r0, r1, half = 16, 50, math.radians(36)
+    out = _box(x, y)
+    out += _txt(x + S_W - 6, y + S_H - 4 - S_LBL * 0.6, "Left Stick", S_LBL, C["idle_text"], anchor="end")
+    for name, dx, dy in DIRS:
+        ang = math.atan2(dy, dx)
+        pts = []
+        for a, r in ((ang - half, r0), (ang - half, r1), (ang, r1 + 6), (ang + half, r1), (ang + half, r0)):
+            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+        d = "M " + " L ".join(f"{px:.1f} {py:.1f}" for px, py in pts) + " Z"
+        lit = active and name == "W"
+        if lit:
+            out += _glow(f'd="{d}" stroke-linejoin="round"', tag="path")
+        out += (f'<path d="{d}" fill="{C["pressed_fill"] if lit else C["idle_fill"]}" stroke="{C["idle_outline"]}" '
+                f'stroke-width="{2.2 if lit else 1.2}" stroke-linejoin="round"></path>')
+        out += _txt(cx + dx * 35, cy + dy * 35, name, S_FONT, C["pressed_text"] if lit else C["idle_text"])
+    ky = cy - (0.8 * 8 if active else 0)
+    out += f'<circle cx="{cx:.1f}" cy="{ky:.1f}" r="9" fill="{C["idle_outline"]}"></circle>'
+    return out
+
+
+def stick_vector(x, y, active):
+    """C: no box. A round pad with a crosshair; the knob drags a vector line from centre."""
+    cx, cy = x + S_W / 2, y + S_H / 2
+    rad = 52
+    out = f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{rad}" fill="{C["idle_fill"]}" stroke="{C["idle_outline"]}" stroke-width="1.2"></circle>'
+    for x1, y1, x2, y2 in ((cx - rad, cy, cx + rad, cy), (cx, cy - rad, cx, cy + rad)):
+        out += f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{C["idle_outline"]}" stroke-opacity="0.3" stroke-width="1"></line>'
+    out += f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{rad * 0.5:.1f}" fill="none" stroke="{C["idle_outline"]}" stroke-opacity="0.3" stroke-width="1"></circle>'
+    ky = cy - (0.8 * rad * 0.7 if active else 0)
+    if active:
+        out += f'<line x1="{cx:.1f}" y1="{cy:.1f}" x2="{cx:.1f}" y2="{ky:.1f}" stroke="{C["pressed_outline"]}" stroke-width="3" stroke-linecap="round"></line>'
+        out += _glow(f'cx="{cx:.1f}" cy="{ky:.1f}" r="13"')
+    out += f'<circle cx="{cx:.1f}" cy="{ky:.1f}" r="13" fill="{C["pressed_fill"] if active else C["idle_fill"]}" stroke="{C["idle_outline"]}" stroke-width="{2.2 if active else 1.2}"></circle>'
+    for name, dx, dy in DIRS:
+        lit = active and name == "W"
+        out += _txt(cx + dx * (rad + 16), cy + dy * (rad + 16), name, S_FONT, C["pressed_outline"] if lit else C["idle_text"], opacity=None if lit else 0.7)
+    out += _txt(cx, cy + rad + 36, "Left Stick", S_LBL, C["idle_text"], weight=600)
+    return out
+
+
+def stick_keycross(x, y, active):
+    """D: key cross. The four bindings are drawn as real keys in a cross, analog dot in the middle."""
+    cx, cy = x + S_W / 2, y + S_H / 2
+    kw, kh, off = 40, 30, 38
+    out = _box(x, y)
+    out += _txt(x + S_W - 6, y + S_H - 4 - S_LBL * 0.6, "Left Stick", S_LBL, C["idle_text"], anchor="end")
+    for name, dx, dy in DIRS:
+        lit = active and name == "W"
+        rx, ry = cx + dx * off - kw / 2, cy + dy * off - kh / 2
+        attrs = f'x="{rx:.1f}" y="{ry:.1f}" width="{kw}" height="{kh}" rx="6"'
+        if lit:
+            out += _glow(attrs, tag="rect")
+        out += f'<rect {attrs} fill="{C["pressed_fill"] if lit else C["idle_fill"]}" stroke="{C["idle_outline"]}" stroke-width="{2.2 if lit else 1.2}"></rect>'
+        out += _txt(cx + dx * off, cy + dy * off, name, S_FONT, C["pressed_text"] if lit else C["idle_text"])
+    ky = cy - (0.8 * 6 if active else 0)
+    out += f'<circle cx="{cx:.1f}" cy="{ky:.1f}" r="8" fill="{C["idle_outline"]}"></circle>'
+    return out
+
+
+def stick_sheet(draw, name, motive, tradeoff):
+    fw, fh = 560, 360
+    pad_y = 40
+    left, right = 100, 300
+    svg = ""
+    for x0, active, cap in ((left, False, "idle"), (right, True, "W held / stick up")):
+        svg += draw(x0, pad_y, active)
+        svg += _txt(x0 + S_W / 2, pad_y + S_H + 18, cap, 8 * PT, T["muted"], weight=400)
+    inner = (f'<div style="width: {fw}px; height: {fh}px; background: #0c0c0e; position: relative; overflow: hidden; display: flex; flex-direction: column;">'
+             f'<svg width="{fw}" height="{fh - 64}" viewBox="0 0 {fw} {fh - 64}" xmlns="http://www.w3.org/2000/svg" style="display: block;">{svg}</svg>'
+             f'<div style="display: flex; flex-direction: column; gap: 3px; padding: 0 20px 14px 20px;">'
+             f'<div style="font-size: {11*PT:.2f}px; font-weight: 600;">{name}</div>'
+             f'<div style="color: {T["muted"]}; font-size: {8*PT:.2f}px;">{motive} Trade-off: {tradeoff}</div></div></div>')
+    return inner, fw, fh
+
+
+STICK_OPTIONS = {
+    "StickCurrent.dc.html": (stick_current, "Current", "Ring, knob and four dots as shipped.", "dots crowd the knob; letters float far from their dots."),
+    "StickA.dc.html": (stick_ring, "Option A: Ring gauge", "Outer ring shows deflection as a lit arc; letters live outside it.", "arc needs analog input to shine; plain WASD only lights a letter."),
+    "StickB.dc.html": (stick_petals, "Option B: Petals", "Each direction is its own wedge key, so a press reads like any other pad.", "busiest shape; diagonals show as two lit wedges."),
+    "StickC.dc.html": (stick_vector, "Option C: Vector", "Drops the box. Round pad, crosshair, and a line that follows the knob.", "breaks the grid look of the surrounding keys."),
+    "StickD.dc.html": (stick_keycross, "Option D: Key cross", "The four bindings drawn as real keys in a cross around a small analog dot.", "least room for the analog motion itself."),
+}
+
+
+# ---- pad (button) style sketches ------------------------------------------
+P_W, P_H, P_R = 75.0, 105.0, 7.5   # one key at scale 0.75
+
+
+def _hex(rgb):
+    return "#%02x%02x%02x" % tuple(max(0, min(255, int(round(v)))) for v in rgb)
+
+
+def _rgb(h):
+    return tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def _mixc(a, b, t):
+    return _hex(tuple(x + (y - x) * t for x, y in zip(_rgb(a), _rgb(b))))
+
+
+def _scale(h, f):  # Qt darker(150) = /1.5, lighter(140) = *1.4 (value only, roughly)
+    return _hex(tuple(v * f for v in _rgb(h)))
+
+
+def _rect(x, y, w, h, rx, fill, stroke=None, sw=1.2, extra=""):
+    st = f' stroke="{stroke}" stroke-width="{sw}"' if stroke else ""
+    return f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="{rx:.1f}" fill="{fill}"{st}{extra}></rect>'
+
+
+def pad_body(style, x, y, t):
+    """SVG for one key body in a pad style at lit level t (0 or 1). Returns (svg, text color)."""
+    w, h, r = P_W, P_H, P_R
+    if style == "pill":
+        r = min(w, h) / 2
+    outline = _mixc(C["idle_outline"], C["pressed_outline"], t)
+    text = _mixc(C["idle_text"], C["pressed_text"], t)
+    out = ""
+    if t > 0 and style != "underline":
+        out += _rect(x, y, w, h, r, "none", C["pressed_outline"], 12, ' stroke-opacity="0.18"')
+        out += _rect(x, y, w, h, r, "none", C["pressed_outline"], 6, ' stroke-opacity="0.09"')
+    if style == "outline":
+        out += _rect(x, y, w, h, r, C["pressed_fill"], outline, 1.2 + t, f' fill-opacity="{t}"')
+    elif style == "keycap":
+        out += _rect(x, y, w, h, r, _mixc(_scale(C["idle_fill"], 1 / 1.5), _scale(C["pressed_fill"], 1 / 1.3), t), outline, 1.2 + t)
+        inset = max(3.0, min(w, h) * 0.10)
+        out += _rect(x + inset, y + inset * 0.6, w - 2 * inset, h - inset * 2.2, max(1.0, r * 0.7),
+                     _mixc(_scale(C["idle_fill"], 1.4), C["pressed_fill"], t))
+    elif style == "underline":
+        out += _rect(x, y, w, h, r, _mixc(C["idle_fill"], C["pressed_fill"], t * 0.35))
+        bar_h = max(2.0, h * 0.08)
+        bar = _mixc(C["idle_outline"], C["pressed_outline"], t)
+        out += (f'<clipPath id="clip{x:.0f}{y:.0f}">{_rect(x, y, w, h, r, "#000")}</clipPath>'
+                f'<g clip-path="url(#clip{x:.0f}{y:.0f})">'
+                f'<rect x="{x:.1f}" y="{y + h - bar_h:.1f}" width="{w:.1f}" height="{bar_h:.1f}" fill="{bar}" fill-opacity="{0.43 + 0.57 * t:.2f}"></rect></g>')
+        text = _mixc(C["idle_text"], C["pressed_outline"], t)
+    else:
+        out += _rect(x, y, w, h, r, _mixc(C["idle_fill"], C["pressed_fill"], t), outline, 1.2 + t)
+    return out, text
+
+
+def pad_sheet(style, name, motive, tradeoff):
+    fw, fh = 560, 300
+    svg = ""
+    keys = (("Space", 0), ("F", 0), ("Space", 1), ("F", 1))
+    x0 = (fw - (4 * P_W + 3 * 20)) / 2
+    y0 = 40
+    for i, (label, t) in enumerate(keys):
+        x = x0 + i * (P_W + 20)
+        body, text = pad_body(style, x, y0, t)
+        svg += body
+        svg += _txt(x + P_W / 2, y0 + P_H / 2, label, S_FONT, text)
+    svg += _txt(x0 + P_W + 10, y0 + P_H + 18, "idle", 8 * PT, T["muted"], weight=400)
+    svg += _txt(x0 + 3 * P_W + 50, y0 + P_H + 18, "pressed", 8 * PT, T["muted"], weight=400)
+    inner = (f'<div style="width: {fw}px; height: {fh}px; background: #0c0c0e; position: relative; overflow: hidden; display: flex; flex-direction: column;">'
+             f'<svg width="{fw}" height="{fh - 64}" viewBox="0 0 {fw} {fh - 64}" xmlns="http://www.w3.org/2000/svg" style="display: block;">{svg}</svg>'
+             f'<div style="display: flex; flex-direction: column; gap: 3px; padding: 0 20px 14px 20px;">'
+             f'<div style="font-size: {11*PT:.2f}px; font-weight: 600;">{name}</div>'
+             f'<div style="color: {T["muted"]}; font-size: {8*PT:.2f}px;">{motive} Trade-off: {tradeoff}</div></div></div>')
+    return inner, fw, fh
+
+
+PAD_OPTIONS = {
+    "PadClassic.dc.html": ("classic", "Classic", "Filled tile, thin border, glow when lit. As shipped.", "reads a little heavy on busy layouts."),
+    "PadOutline.dc.html": ("outline", "Outline", "See-through until pressed, then fills solid. Lightest on the game underneath.", "idle labels sit straight on the game, so contrast depends on the scene."),
+    "PadKeycap.dc.html": ("keycap", "Keycap", "Dark rim with a raised face, so each key reads as a physical cap.", "two tones eat space on small keys."),
+    "PadUnderline.dc.html": ("underline", "Underline", "Flat borderless tile; a bar along the bottom and the label carry the state.", "no glow, so a quick tap is easy to miss."),
+    "PadPill.dc.html": ("pill", "Pill", "Fully rounded ends, like the classic look with softer geometry.", "wide keys become long capsules."),
+}
+
+
+# ---- mouse layouts (geometry straight from the app) ------------------------
+import sys
+sys.path.insert(0, os.path.join(OUT, ".."))
+if not os.path.exists(os.path.join(OUT, "..", "templates.py")):
+    sys.path.insert(0, r"C:\dev\az-overlay")
+from PySide6.QtCore import QRectF  # noqa: E402
+from PySide6.QtGui import QPainterPath  # noqa: E402
+import overlay as app_overlay  # noqa: E402
+import templates as app_templates  # noqa: E402
+
+
+def qpath_to_svg(path):
+    out, i, n = [], 0, path.elementCount()
+    while i < n:
+        e = path.elementAt(i)
+        if e.type == QPainterPath.ElementType.MoveToElement:
+            out.append(f"M {e.x:.1f} {e.y:.1f}")
+        elif e.type == QPainterPath.ElementType.LineToElement:
+            out.append(f"L {e.x:.1f} {e.y:.1f}")
+        elif e.type == QPainterPath.ElementType.CurveToElement:
+            c1, c2 = path.elementAt(i + 1), path.elementAt(i + 2)
+            out.append(f"C {e.x:.1f} {e.y:.1f} {c1.x:.1f} {c1.y:.1f} {c2.x:.1f} {c2.y:.1f}")
+            i += 2
+        i += 1
+    return " ".join(out) + " Z"
+
+
+def mouse_board():
+    cw = ch = 40.0
+    radius = min(10, cw * 0.2, ch * 0.2)
+    font_px = 9 * PT
+    lit = {"Left", "5"}
+    x_cursor, gap, top = 30.0, 60.0, 50.0
+    svg, widest = "", 0
+    for name, _n in app_templates.MICE:
+        prof = app_templates.build("Mouse", name)
+        def cell(col, row, w, h):
+            return QRectF(x_cursor + col * cw + 2, top + row * ch + 2, w * cw, h * ch)
+        rects = []
+        for d in prof["decor"]:
+            r = cell(d["col"], d["row"], d["w"], d["h"])
+            rects.append(r)
+            svg += (f'<path d="{qpath_to_svg(app_overlay.decor_path(d["kind"], r))}" fill="{C["idle_fill"]}" '
+                    f'stroke="{C["idle_outline"]}" stroke-opacity="0.47" stroke-width="1.2"></path>')
+        for k in prof["keys"]:
+            r = cell(k["col"], k["row"], k["w"], k["h"])
+            rects.append(r)
+            on = k["label"] in lit
+            body = qpath_to_svg(app_overlay.shape_path(r, k.get("shape", "rect"), radius))
+            if on:
+                svg += (f'<path d="{body}" fill="none" stroke="{C["pressed_outline"]}" stroke-opacity="0.18" stroke-width="12"></path>'
+                        f'<path d="{body}" fill="none" stroke="{C["pressed_outline"]}" stroke-opacity="0.09" stroke-width="6"></path>')
+            svg += (f'<path d="{body}" fill="{C["pressed_fill"] if on else C["idle_fill"]}" stroke="{C["idle_outline"]}" '
+                    f'stroke-width="{2.2 if on else 1.2}"></path>')
+            tr = app_overlay.key_text_rect(r, k.get("shape", "rect"))
+            size = font_px if len(k["label"]) <= 4 else font_px * 0.85
+            if k["label"] in ("▲", "▼"):
+                size = 9.0
+            svg += _txt(tr.center().x(), tr.center().y(), k["label"], size, C["pressed_text"] if on else C["idle_text"])
+        w = max(r.right() for r in rects) - x_cursor + 4
+        svg += _txt(x_cursor + w / 2, top - 22, name, 8 * PT, T["muted"], weight=400)
+        x_cursor += w + gap
+        widest = max(widest, max(r.bottom() for r in rects))
+    fw, fh = int(x_cursor - gap + 30), int(widest + 40)
+    inner = (f'<div style="width: {fw}px; height: {fh}px; background: #0c0c0e; position: relative; overflow: hidden;">'
+             f'<svg width="{fw}" height="{fh}" viewBox="0 0 {fw} {fh}" xmlns="http://www.w3.org/2000/svg" style="display: block;">{svg}</svg></div>')
+    return inner, fw, fh
+
+
 # ---- emit -----------------------------------------------------------------
 boards = {
     "Main.dc.html": layout_page(),
@@ -416,6 +760,18 @@ boards = {
 }
 overlay_html, ow, oh = overlay_page()
 boards["Overlay.dc.html"] = overlay_html
+stick_boards = {}
+for fname, (draw, name, motive, tradeoff) in STICK_OPTIONS.items():
+    html, sw, sh = stick_sheet(draw, name, motive, tradeoff)
+    boards[fname] = html
+    stick_boards[fname] = (sw, sh)
+mouse_html, mw, mh = mouse_board()
+boards["MouseLayouts.dc.html"] = mouse_html
+pad_boards = {}
+for fname, (style, name, motive, tradeoff) in PAD_OPTIONS.items():
+    html, pw, ph = pad_sheet(style, name, motive, tradeoff)
+    boards[fname] = html
+    pad_boards[fname] = (pw, ph)
 for name, inner in boards.items():
     with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:
         f.write(doc(inner))
@@ -429,8 +785,19 @@ canvas = {
         {"file": "Keys.dc.html", "title": "Settings · Keys (full length)", "x": 0, "y": H + 140, "w": W, "h": KEYS_H},
         {"file": "Help.dc.html", "title": "Settings · Help (full length)", "x": GX, "y": H + 140, "w": W, "h": HELP_H},
         {"file": "About.dc.html", "title": "Settings · About", "x": 2 * GX, "y": H + 140, "w": W, "h": H},
+        {"file": "MouseLayouts.dc.html", "title": "Overlay · Mouse layouts", "x": 0, "y": H + 140 + KEYS_H + 140, "w": mw, "h": mh},
+    ] + [
+        {"file": fname, "title": STICK_OPTIONS[fname][1], "page": "page-2",
+         "x": (i % 3) * (560 + 100), "y": (i // 3) * (360 + 140), "w": sw, "h": sh}
+        for i, (fname, (sw, sh)) in enumerate(stick_boards.items())
+    ] + [
+        {"file": fname, "title": PAD_OPTIONS[fname][1], "page": "page-3",
+         "x": (i % 3) * (560 + 100), "y": (i // 3) * (300 + 140), "w": pw, "h": ph}
+        for i, (fname, (pw, ph)) in enumerate(pad_boards.items())
     ],
-    "launch": {"view": "canvas"},
+    "pages": [{"id": "page-1", "name": "Screens"}, {"id": "page-2", "name": "Stick directions"},
+              {"id": "page-3", "name": "Pad styles"}],
+    "launch": {"view": "canvas", "page": "page-1"},
 }
 with open(os.path.join(OUT, "canvas.json"), "w", encoding="utf-8") as f:
     json.dump(canvas, f, indent=2)

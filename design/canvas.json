@@ -47,9 +47,122 @@
       "y": 1000,
       "w": 1040,
       "h": 860
+    },
+    {
+      "file": "MouseLayouts.dc.html",
+      "title": "Overlay \u00b7 Mouse layouts",
+      "x": 0,
+      "y": 2240,
+      "w": 1258,
+      "h": 348
+    },
+    {
+      "file": "StickCurrent.dc.html",
+      "title": "Current",
+      "page": "page-2",
+      "x": 0,
+      "y": 0,
+      "w": 560,
+      "h": 360
+    },
+    {
+      "file": "StickA.dc.html",
+      "title": "Option A: Ring gauge",
+      "page": "page-2",
+      "x": 660,
+      "y": 0,
+      "w": 560,
+      "h": 360
+    },
+    {
+      "file": "StickB.dc.html",
+      "title": "Option B: Petals",
+      "page": "page-2",
+      "x": 1320,
+      "y": 0,
+      "w": 560,
+      "h": 360
+    },
+    {
+      "file": "StickC.dc.html",
+      "title": "Option C: Vector",
+      "page": "page-2",
+      "x": 0,
+      "y": 500,
+      "w": 560,
+      "h": 360
+    },
+    {
+      "file": "StickD.dc.html",
+      "title": "Option D: Key cross",
+      "page": "page-2",
+      "x": 660,
+      "y": 500,
+      "w": 560,
+      "h": 360
+    },
+    {
+      "file": "PadClassic.dc.html",
+      "title": "Classic",
+      "page": "page-3",
+      "x": 0,
+      "y": 0,
+      "w": 560,
+      "h": 300
+    },
+    {
+      "file": "PadOutline.dc.html",
+      "title": "Outline",
+      "page": "page-3",
+      "x": 660,
+      "y": 0,
+      "w": 560,
+      "h": 300
+    },
+    {
+      "file": "PadKeycap.dc.html",
+      "title": "Keycap",
+      "page": "page-3",
+      "x": 1320,
+      "y": 0,
+      "w": 560,
+      "h": 300
+    },
+    {
+      "file": "PadUnderline.dc.html",
+      "title": "Underline",
+      "page": "page-3",
+      "x": 0,
+      "y": 440,
+      "w": 560,
+      "h": 300
+    },
+    {
+      "file": "PadPill.dc.html",
+      "title": "Pill",
+      "page": "page-3",
+      "x": 660,
+      "y": 440,
+      "w": 560,
+      "h": 300
+    }
+  ],
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Screens"
+    },
+    {
+      "id": "page-2",
+      "name": "Stick directions"
+    },
+    {
+      "id": "page-3",
+      "name": "Pad styles"
     }
   ],
   "launch": {
-    "view": "canvas"
+    "view": "canvas",
+    "page": "page-1"
   }
 }

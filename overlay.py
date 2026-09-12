@@ -14,6 +14,7 @@ Ctrl+Alt+Q quits (editable in config).
 
 import ctypes
 import json
+import math
 import os
 import queue
 import shutil
@@ -22,7 +23,7 @@ import time
 
 from pynput import keyboard, mouse
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QFont, QFontMetrics, QFontMetricsF, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QAction, QBrush, QColor, QFont, QFontMetrics, QFontMetricsF, QIcon, QPainter, QPainterPath, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
 
 from gamepad import Gamepad, is_gamepad_input
@@ -66,7 +67,16 @@ def ensure_user_data():
 
 # What a saved layout profile carries (hotkeys and app theme stay global).
 PROFILE_KEYS = ("x", "y", "scale", "opacity", "cell_w", "cell_h", "gap", "shape",
-                "colors", "font", "keys", "sticks")
+                "pad_style", "stick_style", "stick_box", "colors", "font", "keys", "sticks", "decor")
+
+# How keys and buttons are drawn; the idle/pressed colors apply to every style.
+PAD_STYLES = ("classic", "outline", "keycap", "underline", "pill")
+
+# How sticks and d-pads are drawn. "classic" is the ring-and-dots look from the first versions.
+STICK_STYLES = ("classic", "ring", "petals", "vector", "keys")
+STICK_DIRS = (("up", 0, -1), ("down", 0, 1), ("left", -1, 0), ("right", 1, 0))
+STICK_VECTORS = {name: (dx, dy) for name, dx, dy in STICK_DIRS}
+TEXT_SHAPES = ("dot", "letter", "petal")  # pads whose label is drawn at a point, not fitted in a rect
 
 # ---------------------------------------------------------------------------
 # Input tokens. A pad is lit when its input is held. Tokens are either Windows
@@ -74,6 +84,9 @@ PROFILE_KEYS = ("x", "y", "scale", "opacity", "cell_w", "cell_h", "gap", "shape"
 # by name ("Page Up"), or physically by scancode (templates do this so the
 # highlight follows the key position on any Windows layout).
 # ---------------------------------------------------------------------------
+WHEEL_UP, WHEEL_DOWN = 0x100, 0x101  # pseudo virtual-key codes for scroll ticks
+WHEEL_HOLD_S = 0.12
+
 VK_BY_LABEL = {
     "Alt": [0x12, 0xA4, 0xA5],
     "Shift": [0x10, 0xA0, 0xA1],
@@ -106,6 +119,9 @@ VK_BY_LABEL = {
     "Num *": [0x6A], "Num +": [0x6B], "Num -": [0x6D], "Num .": [0x6E], "Num /": [0x6F],
     "Mouse Left": [0x01], "Mouse Right": [0x02], "Mouse Middle": [0x04],
     "Mouse 4": [0x05], "Mouse 5": [0x06],
+    # Scroll ticks have no release, so they are pseudo keys (above the real VK range)
+    # that the overlay holds for WHEEL_HOLD_S after each tick.
+    "Wheel Up": [WHEEL_UP], "Wheel Down": [WHEEL_DOWN],
 }
 VK_BY_LABEL.update({f"F{n}": [0x6F + n] for n in range(1, 25)})
 VK_BY_LABEL.update({f"Num {n}": [0x60 + n] for n in range(10)})
@@ -254,6 +270,12 @@ def migrate(cfg):
     for k, v in DEFAULT_FONT.items():
         cfg["font"].setdefault(k, v)
     cfg.setdefault("shape", "rect")
+    if cfg.get("pad_style") not in PAD_STYLES:
+        cfg["pad_style"] = "classic"
+    if cfg.get("stick_style") not in STICK_STYLES:
+        cfg["stick_style"] = "classic"
+    cfg["stick_box"] = bool(cfg.get("stick_box", True))
+    cfg.setdefault("decor", [])  # silhouettes drawn behind the pads, e.g. a mouse body
     for k in cfg.get("keys", []):
         k.setdefault("w", 1)
         k.setdefault("h", 1)
@@ -370,6 +392,8 @@ STICK_LABEL_FLAGS = Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight
 def key_text_rect(rect, shape="rect"):
     """Keep labels inside the border, including on circular buttons."""
     area = rect.adjusted(3, 2, -3, -2)
+    if shape.startswith("mouse_"):  # the label sits under the domed top
+        area.adjust(0, area.height() * 0.3, 0, 0)
     if shape == "circle":
         inset_x = area.width() * (1 - 2 ** -0.5) / 2
         inset_y = area.height() * (1 - 2 ** -0.5) / 2
@@ -397,6 +421,118 @@ def fit_key_font(text, requested_font, rect, device=None):
     return font
 
 
+def mix(a, b, t):
+    """Linear blend of two QColors, alpha included."""
+    return QColor(
+        int(a.red() + (b.red() - a.red()) * t),
+        int(a.green() + (b.green() - a.green()) * t),
+        int(a.blue() + (b.blue() - a.blue()) * t),
+        int(a.alpha() + (b.alpha() - a.alpha()) * t),
+    )
+
+
+def mouse_button_path(rect, left, full=False):
+    """A mouse button: straight inner edge, small bottom corners, and a wide arc over the
+    outer top corner. The arc is a quarter of the ellipse that the whole mouse body would
+    have (radius 1.25 x the button width, or the width itself for a two-button mouse), so
+    left and right buttons meet the body outline drawn behind them."""
+    x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
+    rb = min(w, h) * 0.18
+    rx, ry = (w if full else w * 1.25), h * 0.55
+    start = math.degrees(math.acos(max(-1.0, min(1.0, (w - rx) / rx))))  # where the arc meets the inner edge
+    path = QPainterPath()
+    path.moveTo(x + rb, y + h)
+    path.lineTo(x + w - rb, y + h)
+    path.arcTo(x + w - 2 * rb, y + h - 2 * rb, 2 * rb, 2 * rb, 270, 90)
+    path.lineTo(x + w, y + ry - ry * math.sin(math.radians(start)))
+    path.arcTo(x, y, 2 * rx, 2 * ry, start, 180 - start)
+    path.lineTo(x, y + h - rb)
+    path.arcTo(x, y + h - 2 * rb, 2 * rb, 2 * rb, 180, 90)
+    path.closeSubpath()
+    if not left:
+        path = QTransform().translate(2 * x + w, 0).scale(-1, 1).map(path)
+    return path
+
+
+def shape_path(rect, shape, radius):
+    path = QPainterPath()
+    if shape in ("circle", "dot"):
+        path.addEllipse(rect)
+    elif shape.startswith("mouse_"):
+        path = mouse_button_path(rect, left=shape.startswith("mouse_left"), full=shape.endswith("_full"))
+    else:
+        path.addRoundedRect(rect, radius, radius)
+    return path
+
+
+def decor_path(kind, rect):
+    """Silhouette drawn behind the pads. "mouse": domed top, straight flanks, rounded tail."""
+    x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
+    path = QPainterPath()
+    if kind == "mouse":
+        top, rb = h * 0.232, w * 0.42
+        path.moveTo(x, y + top)
+        path.arcTo(x, y, w, 2 * top, 180, -180)
+        path.lineTo(x + w, y + h - rb)
+        path.arcTo(x + w - 2 * rb, y + h - 2 * rb, 2 * rb, 2 * rb, 0, -90)
+        path.lineTo(x + rb, y + h)
+        path.arcTo(x, y + h - 2 * rb, 2 * rb, 2 * rb, 270, -90)
+        path.closeSubpath()
+    else:
+        path.addRoundedRect(rect, w * 0.1, w * 0.1)
+    return path
+
+
+def draw_pad(p, rect, shape, style, radius, c, t):
+    """Paint the glow and body of one key at lit level t (0..1) in the given pad style.
+    Shared by the overlay and the settings preview. Returns the color for its label."""
+    if style == "pill" and shape != "circle":
+        radius = min(rect.width(), rect.height()) / 2
+    outline = mix(c["idle_outline"], c["pressed_outline"], t)
+    text = mix(c["idle_text"], c["pressed_text"], t)
+    body = shape_path(rect, shape, radius)
+    if t > 0.02 and style != "underline":  # soft glow behind lit keys
+        glow = QColor(c["pressed_outline"])
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for i, spread in enumerate((6, 3)):
+            glow.setAlphaF(0.18 * t / (i + 1))
+            p.setPen(QPen(glow, spread * 2))
+            p.drawPath(body)
+    if style == "outline":  # see-through until pressed
+        fill = QColor(c["pressed_fill"])
+        fill.setAlphaF(t)
+        p.setBrush(QBrush(fill))
+        p.setPen(QPen(outline, 1.2 + t))
+        p.drawPath(body)
+    elif style == "keycap":  # dark rim with a raised, lighter face
+        p.setBrush(QBrush(mix(c["idle_fill"].darker(150), c["pressed_fill"].darker(130), t)))
+        p.setPen(QPen(outline, 1.2 + t))
+        p.drawPath(body)
+        inset = max(3.0, min(rect.width(), rect.height()) * 0.10)
+        face = rect.adjusted(inset, inset * 0.6, -inset, -inset * 1.6)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(mix(c["idle_fill"].lighter(140), c["pressed_fill"], t)))
+        p.drawPath(shape_path(face, shape, max(1.0, radius * 0.7)))
+    elif style == "underline":  # flat tile, no border; a bar along the bottom carries the state
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(mix(c["idle_fill"], c["pressed_fill"], t * 0.35)))
+        p.drawPath(body)
+        bar_h = max(2.0, rect.height() * 0.08)
+        faint = QColor(c["idle_outline"])
+        faint.setAlpha(110)
+        p.save()
+        p.setClipPath(body)
+        p.setBrush(QBrush(mix(faint, c["pressed_outline"], t)))
+        p.drawRect(QRectF(rect.x(), rect.bottom() - bar_h, rect.width(), bar_h))
+        p.restore()
+        text = mix(c["idle_text"], c["pressed_outline"], t)
+    else:  # classic, pill
+        p.setBrush(QBrush(mix(c["idle_fill"], c["pressed_fill"], t)))
+        p.setPen(QPen(outline, 1.2 + t))
+        p.drawPath(body)
+    return text
+
+
 class Pad:
     """One drawable element: a key, a controller button, or a stick direction."""
 
@@ -404,7 +540,8 @@ class Pad:
         self.label = label
         self.rect = rect
         self.alts = alts  # from parse_input
-        self.shape = shape  # "rect" | "circle" | "dot"
+        self.shape = shape  # "rect" | "circle" | "key" | "dot" | "letter" | "petal"
+        self.path = None  # QPainterPath for non-rectangular pads (petals)
         self.source = source  # ("key", index) or ("stick", index, "up"|"down"|"left"|"right")
         self.axis = axis  # analog input id whose value drives level (triggers)
         self.level = 0.0  # 0 idle .. 1 fully lit
@@ -465,7 +602,8 @@ class Overlay(QWidget):
         self.listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
         self.listener.daemon = True
         self.listener.start()
-        self.mouse_listener = mouse.Listener(on_click=self.on_click)
+        self.mouse_listener = mouse.Listener(on_click=self.on_click, on_scroll=self.on_scroll)
+        self._pulses = {}  # pseudo key -> time it releases (scroll ticks)
         self.mouse_listener.daemon = True
         self.mouse_listener.start()
 
@@ -495,11 +633,11 @@ class Overlay(QWidget):
         self.col = {k: QColor(v) for k, v in cfg["colors"].items()}
 
         old = {p.source: p.level for p in self.pads}
-        self.pads, self.sticks = [], []
+        self.pads, self.sticks, self.decor = [], [], []
         self.build()
         for p in self.pads:
             p.level = old.get(p.source, 0.0)
-            if p.shape != "dot":
+            if p.shape not in TEXT_SHAPES:
                 p.text_rect = key_text_rect(p.rect, p.shape)
                 p.font = fit_key_font(p.label, self.font, p.text_rect, self)
                 p.capture_font = fit_key_font("press\na key", self.font, p.text_rect, self)
@@ -519,13 +657,16 @@ class Overlay(QWidget):
         return QRectF(x0, y0, w * (self.cw + self.gap) - self.gap, h * (self.ch + self.gap) - self.gap)
 
     def extent(self):
-        rects = [p.rect for p in self.pads if p.source and p.source[0] == "key"] + [s.rect for s in self.sticks]
+        rects = ([p.rect for p in self.pads if p.source and p.source[0] == "key"] + [s.rect for s in self.sticks]
+                 + [r for _kind, r in self.decor])
         if not rects:
             return 40, 40
         return max(r.right() for r in rects) + 4, max(r.bottom() for r in rects) + 4
 
     def build(self):
         default_shape = self.cfg.get("shape", "rect")
+        for d in self.cfg.get("decor", []):
+            self.decor.append((d.get("kind", "mouse"), self.cell_rect(d["col"], d["row"], d.get("w", 1), d.get("h", 1))))
         for i, k in enumerate(self.cfg["keys"]):
             try:
                 alts = pad_inputs(k)
@@ -535,14 +676,12 @@ class Overlay(QWidget):
             self.pads.append(Pad(k["label"], rect, alts, shape=k.get("shape", default_shape),
                                  source=("key", i), axis=k.get("axis")))
 
+        style = self.cfg.get("stick_style", "classic")
         for i, spec in enumerate(self.cfg.get("sticks", [])):
             rect = self.cell_rect(spec["col"], spec["row"], spec.get("w", 2), spec.get("h", 2))
             stick = Stick(rect, spec, i)
             self.sticks.append(stick)
-            cx, cy = rect.center().x(), rect.center().y()
-            rad = min(rect.width(), rect.height()) * 0.30
-            dot_r = rad * 0.30
-            for name, dx, dy in (("up", 0, -1), ("down", 0, 1), ("left", -1, 0), ("right", 1, 0)):
+            for name, dx, dy in STICK_DIRS:
                 inp = spec.get(name)
                 if not inp:
                     continue
@@ -550,12 +689,67 @@ class Overlay(QWidget):
                     alts = parse_input(inp)
                 except ValueError:
                     alts = []
-                px, py = cx + dx * rad * 0.62, cy + dy * rad * 0.62
                 label = spec.get(name + "_label") or (GAMEPAD_LABELS.get(inp, inp) if is_gamepad_input(inp) else inp)
-                pad = Pad(label, QRectF(px - dot_r, py - dot_r, 2 * dot_r, 2 * dot_r), alts,
-                          shape="dot", source=("stick", i, name))
-                pad.text_pos = QPointF(cx + dx * rad * 1.4, cy + dy * rad * 1.4)
+                pad = self.direction_pad(style, stick, label, alts, dx, dy)
+                pad.source = ("stick", i, name)
                 self.pads.append(pad)
+
+    @staticmethod
+    def stick_radius(st):
+        """Radius of the ring / pad area that the direction pads are laid out around."""
+        return min(st.rect.width(), st.rect.height()) * 0.30
+
+    def direction_pad(self, style, st, label, alts, dx, dy):
+        """One direction of a stick, shaped for the chosen style. Sizes are relative to the
+        stick's shorter side so every style stays inside its cell at any scale."""
+        cx, cy = st.rect.center().x(), st.rect.center().y()
+        m = min(st.rect.width(), st.rect.height())
+        rad = self.stick_radius(st)
+        if style == "petals":  # wedge keys around a small analog dot
+            r0, r1, half = m * 0.10, rad, math.radians(36)
+            ang = math.atan2(dy, dx)
+            path = QPainterPath()
+            corners = ((ang - half, r0), (ang - half, r1), (ang, r1 + m * 0.04), (ang + half, r1), (ang + half, r0))
+            for j, (a, r) in enumerate(corners):
+                pt = QPointF(cx + r * math.cos(a), cy + r * math.sin(a))
+                if j == 0:
+                    path.moveTo(pt)
+                else:
+                    path.lineTo(pt)
+            path.closeSubpath()
+            pad = Pad(label, path.boundingRect(), alts, shape="petal")
+            pad.path = path
+            pad.text_pos = QPointF(cx + dx * m * 0.22, cy + dy * m * 0.22)
+        elif style == "keys":  # the bindings drawn as real keys in a cross
+            kw, kh, off = m * 0.26, m * 0.19, m * 0.24
+            pad = Pad(label, QRectF(cx + dx * off - kw / 2, cy + dy * off - kh / 2, kw, kh), alts, shape="key")
+        elif style in ("ring", "vector"):  # letters outside the ring; the rect is only the hit area
+            side = m * 0.18
+            px, py = cx + dx * (rad + m * 0.10), cy + dy * (rad + m * 0.10)
+            pad = Pad(label, QRectF(px - side / 2, py - side / 2, side, side), alts, shape="letter")
+            pad.text_pos = QPointF(px, py)
+        else:  # classic: dots inside the ring, letters beyond it
+            dot_r = rad * 0.30
+            px, py = cx + dx * rad * 0.62, cy + dy * rad * 0.62
+            pad = Pad(label, QRectF(px - dot_r, py - dot_r, 2 * dot_r, 2 * dot_r), alts, shape="dot")
+            pad.text_pos = QPointF(cx + dx * rad * 1.4, cy + dy * rad * 1.4)
+        return pad
+
+    def stick_heading(self, st):
+        """Where a stick points: (degrees, 0 = right and 90 = down on screen; strength 0..1).
+        Analog axes win; otherwise the most-lit direction pad of that stick."""
+        ox, oy = st.offset.x(), st.offset.y()
+        mag = math.hypot(ox, oy)
+        if mag > 0.15:
+            return math.degrees(math.atan2(oy, ox)), min(1.0, mag)
+        best, level = None, 0.0
+        for pad in self.pads:
+            if pad.source and pad.source[0] == "stick" and pad.source[1] == st.index and pad.level > level:
+                best, level = pad.source[2], pad.level
+        if best is None:
+            return 0.0, 0.0
+        dx, dy = STICK_VECTORS[best]
+        return math.degrees(math.atan2(dy, dx)), level
 
     def layout_stick_labels(self):
         """Hide stick names when their rendered text would cover an input."""
@@ -564,7 +758,7 @@ class Overlay(QWidget):
         input_metrics = QFontMetrics(self.font, self)
         obstacles = [pad.rect for pad in self.pads]
         for pad in self.pads:
-            if pad.shape == "dot":
+            if pad.shape in TEXT_SHAPES:
                 # Cache the same baseline used to paint direction labels.
                 pad.text_origin = QPointF(
                     pad.text_pos.x() - input_metrics.horizontalAdvance(pad.label) / 2,
@@ -573,7 +767,7 @@ class Overlay(QWidget):
                 if pad.label:
                     obstacles.append(QRectF(input_metrics.boundingRect(pad.label)).translated(pad.text_origin))
         for st in self.sticks:
-            rad = min(st.rect.width(), st.rect.height()) * 0.30
+            rad = self.stick_radius(st)
             # Include the full travel of an analog knob, so moving it cannot
             # make a visible name collide or flicker.
             reach = rad * (1.02 if st.axes else 1)
@@ -588,20 +782,10 @@ class Overlay(QWidget):
             )
 
     # ---- painting -----------------------------------------------------
-    @staticmethod
-    def mix(a, b, t):
-        return QColor(
-            int(a.red() + (b.red() - a.red()) * t),
-            int(a.green() + (b.green() - a.green()) * t),
-            int(a.blue() + (b.blue() - a.blue()) * t),
-            int(a.alpha() + (b.alpha() - a.alpha()) * t),
-        )
+    mix = staticmethod(mix)
 
     def _draw_shape(self, p, pad):
-        if pad.shape == "rect":
-            p.drawRoundedRect(pad.rect, self.radius, self.radius)
-        else:
-            p.drawEllipse(pad.rect)
+        p.drawPath(pad.path if pad.path is not None else shape_path(pad.rect, pad.shape, self.radius))
 
     def paintEvent(self, _event):
         p = QPainter(self)
@@ -609,19 +793,95 @@ class Overlay(QWidget):
         p.setFont(self.font)
         c = self.col
 
-        for st in self.sticks:
+        style = self.cfg.get("stick_style", "classic")
+        box = self.cfg.get("stick_box", True)
+        pad_style = self.cfg.get("pad_style", "classic")
+
+        for kind, rect in self.decor:  # silhouettes sit behind everything, outlined faintly
+            faint = QColor(c["idle_outline"])
+            faint.setAlpha(120)
             p.setBrush(QBrush(c["idle_fill"]))
-            p.setPen(QPen(c["idle_outline"], 1.2))
-            p.drawRoundedRect(st.rect, self.radius, self.radius)
+            p.setPen(QPen(faint, 1.2))
+            p.drawPath(decor_path(kind, rect))
+
+        for st in self.sticks:
             cx, cy = st.rect.center().x(), st.rect.center().y()
-            rad = min(st.rect.width(), st.rect.height()) * 0.30
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(QRectF(cx - rad, cy - rad, 2 * rad, 2 * rad))
-            if st.axes:  # analog knob
-                kx, ky = cx + st.offset.x() * rad * 0.6, cy + st.offset.y() * rad * 0.6
-                kr = rad * 0.42
-                p.setBrush(QBrush(self.mix(c["idle_outline"], c["pressed_fill"], st.level)))
-                p.setPen(QPen(self.mix(c["idle_outline"], c["pressed_outline"], st.level), 1.2))
+            m = min(st.rect.width(), st.rect.height())
+            rad = self.stick_radius(st)
+            ox, oy = st.offset.x(), st.offset.y()
+            mag = min(1.0, math.hypot(ox, oy))
+            if box:
+                p.setBrush(QBrush(c["idle_fill"]))
+                p.setPen(QPen(c["idle_outline"], 1.2))
+                p.drawRoundedRect(st.rect, self.radius, self.radius)
+            if style == "classic":
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(c["idle_outline"], 1.2))
+                p.drawEllipse(QRectF(cx - rad, cy - rad, 2 * rad, 2 * rad))
+                if st.axes:  # analog knob
+                    kx, ky = cx + ox * rad * 0.6, cy + oy * rad * 0.6
+                    kr = rad * 0.42
+                    p.setBrush(QBrush(self.mix(c["idle_outline"], c["pressed_fill"], st.level)))
+                    p.setPen(QPen(self.mix(c["idle_outline"], c["pressed_outline"], st.level), 1.2))
+                    p.drawEllipse(QRectF(kx - kr, ky - kr, 2 * kr, 2 * kr))
+            elif style == "ring":  # faint ring with ticks; deflection lights an arc and trails the knob
+                ring = QRectF(cx - rad, cy - rad, 2 * rad, 2 * rad)
+                faint = QColor(c["idle_outline"])
+                faint.setAlpha(100)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(faint, 1.2))
+                p.drawEllipse(ring)
+                faint.setAlpha(150)
+                p.setPen(QPen(faint, 1.2))
+                for _name, dx, dy in STICK_DIRS:
+                    p.drawLine(QPointF(cx + dx * (rad - m * 0.03), cy + dy * (rad - m * 0.03)),
+                               QPointF(cx + dx * (rad + m * 0.03), cy + dy * (rad + m * 0.03)))
+                heading, strength = self.stick_heading(st)
+                if strength > 0.02:
+                    start, span = int((-heading - 35) * 16), 70 * 16
+                    lit = QColor(c["pressed_outline"])
+                    lit.setAlphaF(0.25 * strength)
+                    p.setPen(QPen(lit, m * 0.09, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                    p.drawArc(ring, start, span)
+                    lit.setAlphaF(strength)
+                    p.setPen(QPen(lit, m * 0.032, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                    p.drawArc(ring, start, span)
+                kx, ky = cx + ox * rad * 0.55, cy + oy * rad * 0.55
+                if mag > 0.05:
+                    trail = QColor(c["pressed_outline"])
+                    trail.setAlpha(150)
+                    p.setPen(QPen(trail, 2))
+                    p.drawLine(QPointF(cx, cy), QPointF(kx, ky))
+                kr = m * 0.07
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(self.mix(c["idle_outline"], c["pressed_fill"], max(st.level, mag))))
+                p.drawEllipse(QRectF(kx - kr, ky - kr, 2 * kr, 2 * kr))
+            elif style == "vector":  # round pad with a crosshair; the knob drags a line from the centre
+                p.setBrush(QBrush(c["idle_fill"]))
+                p.setPen(QPen(c["idle_outline"], 1.2))
+                p.drawEllipse(QRectF(cx - rad, cy - rad, 2 * rad, 2 * rad))
+                faint = QColor(c["idle_outline"])
+                faint.setAlpha(75)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(faint, 1))
+                p.drawLine(QPointF(cx - rad, cy), QPointF(cx + rad, cy))
+                p.drawLine(QPointF(cx, cy - rad), QPointF(cx, cy + rad))
+                p.drawEllipse(QRectF(cx - rad / 2, cy - rad / 2, rad, rad))
+                kx, ky = cx + ox * rad * 0.7, cy + oy * rad * 0.7
+                if mag > 0.05:
+                    p.setPen(QPen(c["pressed_outline"], 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                    p.drawLine(QPointF(cx, cy), QPointF(kx, ky))
+                t = max(st.level, mag)
+                kr = m * 0.085
+                p.setBrush(QBrush(self.mix(c["idle_fill"], c["pressed_fill"], t)))
+                p.setPen(QPen(self.mix(c["idle_outline"], c["pressed_outline"], t), 1.2 + t))
+                p.drawEllipse(QRectF(kx - kr, ky - kr, 2 * kr, 2 * kr))
+            else:  # petals / keys: the direction pads carry the shapes; a small analog dot sits in the middle
+                reach = m * (0.05 if style == "petals" else 0.04)
+                kr = m * (0.06 if style == "petals" else 0.05)
+                kx, ky = cx + ox * reach, cy + oy * reach
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(self.mix(c["idle_outline"], c["pressed_fill"], max(st.level, mag))))
                 p.drawEllipse(QRectF(kx - kr, ky - kr, 2 * kr, 2 * kr))
             if st.label_visible:
                 p.setPen(c["idle_text"])
@@ -635,7 +895,7 @@ class Overlay(QWidget):
                 p.setBrush(QBrush(QColor(hot.red(), hot.green(), hot.blue(), 60)))
                 p.setPen(QPen(hot, 2, Qt.PenStyle.DashLine))
                 self._draw_shape(p, pad)
-                if pad.shape != "dot":
+                if pad.shape not in TEXT_SHAPES:
                     p.setPen(hot)
                     p.setFont(pad.capture_font)
                     p.drawText(pad.text_rect, KEY_TEXT_FLAGS, "press\na key")
@@ -650,11 +910,16 @@ class Overlay(QWidget):
                 continue
 
             t = pad.level
+            if pad.shape not in TEXT_SHAPES:  # keys, buttons and the key-cross directions
+                p.setPen(draw_pad(p, pad.rect, pad.shape, pad_style, self.radius, c, t))
+                p.setFont(pad.font)
+                p.drawText(pad.text_rect, KEY_TEXT_FLAGS, pad.label)
+                continue
             fill = self.mix(c["idle_fill"], c["pressed_fill"], t)
             outline = self.mix(c["idle_outline"], c["pressed_outline"], t)
             text = self.mix(c["idle_text"], c["pressed_text"], t)
 
-            if t > 0.02:  # soft glow behind lit keys
+            if t > 0.02 and pad.shape != "letter":  # soft glow behind lit keys
                 glow = QColor(c["pressed_outline"])
                 for i, spread in enumerate((6, 3)):
                     glow.setAlphaF(0.18 * t / (i + 1))
@@ -662,12 +927,17 @@ class Overlay(QWidget):
                     p.setBrush(Qt.BrushStyle.NoBrush)
                     self._draw_shape(p, pad)
 
-            p.setBrush(QBrush(fill))
-            p.setPen(QPen(outline, 1.2 + t))
-            self._draw_shape(p, pad)
-            if pad.shape == "dot":
+            if pad.shape != "letter":  # a letter pad is only its label
+                p.setBrush(QBrush(fill))
+                p.setPen(QPen(outline, 1.2 + t))
+                self._draw_shape(p, pad)
+            if pad.shape in ("dot", "letter"):
                 p.setFont(self.font)
                 p.setPen(self.mix(c["idle_text"], c["pressed_outline"], t))
+                p.drawText(pad.text_origin, pad.label)
+            elif pad.shape == "petal":
+                p.setFont(self.font)
+                p.setPen(text)
                 p.drawText(pad.text_origin, pad.label)
             else:
                 p.setPen(text)
@@ -701,6 +971,8 @@ class Overlay(QWidget):
         if not on:
             self.capture_pad = None
             self.capturing = False
+            self._drag_origin = None  # a drag cut short by leaving edit mode must not resume later
+            self._press_pos = None
         was_visible = self.isVisible()
         self.setWindowFlag(Qt.WindowType.WindowTransparentForInput, not on)
         self.setWindowFlag(Qt.WindowType.WindowDoesNotAcceptFocus, not on)
@@ -720,7 +992,9 @@ class Overlay(QWidget):
         if not self.edit_mode:
             return
         if e.button() == Qt.MouseButton.LeftButton:
-            self._press_pos = e.position()
+            # Global, not local: while dragging the window follows the cursor, so the
+            # local point is the same on press and release even after a long drag.
+            self._press_pos = e.globalPosition()
             self._drag_origin = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
         elif e.button() == Qt.MouseButton.RightButton:
             pad = self.pad_at(e.position())
@@ -733,12 +1007,15 @@ class Overlay(QWidget):
     def mouseMoveEvent(self, e):
         if self.edit_mode and self._drag_origin is not None:
             self.move(e.globalPosition().toPoint() - self._drag_origin)
+            # Keep cfg current mid-drag so an apply() from elsewhere (settings
+            # edits, rescale) rebuilds at the dragged spot, not the old one.
+            self.cfg["x"], self.cfg["y"] = self.x(), self.y()
 
     def mouseReleaseEvent(self, e):
         if not self.edit_mode or self._drag_origin is None:
             return
         self._drag_origin = None
-        moved = (e.position() - self._press_pos).manhattanLength() if self._press_pos else 99
+        moved = (e.globalPosition() - self._press_pos).manhattanLength() if self._press_pos else 99
         if moved < 4:
             pad = self.pad_at(e.position())
             if pad is not None and pad.source:
@@ -796,6 +1073,10 @@ class Overlay(QWidget):
         if vk is not None:
             self.events.put(("down" if pressed else "up", vk))
 
+    def on_scroll(self, _x, _y, _dx, dy):
+        if dy:
+            self.events.put(("pulse", WHEEL_UP if dy > 0 else WHEEL_DOWN))
+
     def _on_new_press(self, token):
         if self.capturing:
             self.capturing = False
@@ -826,7 +1107,16 @@ class Overlay(QWidget):
                 if vk not in self.pressed:
                     self.pressed.add(vk)
                     self._on_new_press(vk)
+            elif kind == "pulse":  # a scroll tick: held briefly, extended by further ticks
+                self._pulses[vk] = now + WHEEL_HOLD_S
+                if vk not in self.pressed:
+                    self.pressed.add(vk)
+                    self._on_new_press(vk)
             else:
+                self.pressed.discard(vk)
+        for vk, until in list(self._pulses.items()):
+            if now >= until:
+                del self._pulses[vk]
                 self.pressed.discard(vk)
 
         gp_pressed, axes = self.gamepad.poll()

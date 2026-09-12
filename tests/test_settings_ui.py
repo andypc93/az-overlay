@@ -313,3 +313,18 @@ def test_named_layout_autosaves_without_closing(editor, monkeypatch):
     assert not editor.save_timer.isActive()
     assert overlay.load_profile("Test saved layout")["x"] == 1234
     assert overlay.load_config()["x"] == 1234
+
+
+def test_switching_to_another_app_ends_on_screen_editing(editor):
+    """Alt-tabbing to a game must not leave the overlay draggable/scroll-resizable:
+    game clicks and weapon-scroll would move and resize it."""
+    calls = []
+    editor.overlay.set_edit_mode = calls.append
+    editor.btn_move.setChecked(True)
+    assert calls == [True]
+
+    QApplication.instance().applicationStateChanged.emit(Qt.ApplicationState.ApplicationInactive)
+    QTest.qWait(50)
+
+    assert calls == [True, False]
+    assert not editor.btn_move.isChecked()
