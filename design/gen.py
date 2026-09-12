@@ -156,12 +156,17 @@ def form(*rows):
 
 # ---- chrome ---------------------------------------------------------------
 def header():
-    return (f'<div style="display: flex; flex-direction: column; gap: 18px; background: {T["card"]}; border-bottom: 1px solid {T["line"]}; padding: 20px 26px 18px 26px;">'
-            f'<div style="display: flex; align-items: center; gap: 10px;">{muted("Every move. On display.", wrap=False)}'
-            f'<div style="flex: 1;"></div><span>Theme</span>{combo("Dark", width=100)}</div>'
-            f'<div style="display: flex; align-items: center; gap: 10px;">{muted("Layout", wrap=False)}'
-            f'{combo("Choose a saved layout", flex=1, placeholder=True)}{button("Save layout")}{button("More", kind="quiet")}'
-            f'<div style="width: 8px;"></div>{button("+ New layout", kind="primary")}</div></div>')
+    """One row: layout name as a title (click to rename) + chevron to switch, tagline under it,
+    Rename / Duplicate / Delete / + New layout on the right. Layouts always autosave, so no Save."""
+    title = (f'<div style="display: flex; flex-direction: column; gap: 4px;">'
+             f'<div style="display: flex; align-items: center; gap: 12px;">'
+             f'<span style="font-size: {20*PT:.2f}px; font-weight: 700; letter-spacing: -0.5px;">Azeron Cyborg II</span>{arrow()}</div>'
+             f'<div style="color: {T["accent"]}; font-size: {9*PT:.2f}px;">Every move. On display.</div></div>')
+    actions = (f'<div style="flex: 1;"></div>{button("Rename")}{button("Duplicate")}{button("Delete", kind="quiet")}'
+               f'<div style="width: 8px;"></div>{button("+ New layout", kind="primary")}')
+    return (f'<div style="display: flex; flex-direction: column; gap: 18px; background: {T["card"]}; '
+            f'border-bottom: 1px solid {T["line"]}; padding: 18px 26px 16px 26px;">'
+            f'<div style="display: flex; align-items: center; gap: 10px;">{title}{actions}</div></div>')
 
 
 def sidebar(active):
@@ -228,25 +233,22 @@ def layout_page():
 
 
 def keys_page():
-    rows = [("Page Up", ""), ("9", ""), ("Alt", ""), ("H", ""), ("X", ""), ("F1", ""), ("Esc", "")]
-    thead = (f'<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); color: {T["muted"]}; '
-             f'font-size: {8*PT:.2f}px; font-weight: 600; border-bottom: 1px solid {T["line"]};">'
-             f'<div style="padding: 8px;">Label</div><div style="padding: 8px;">Input</div></div>')
-    trs = ""
-    for i, (label, inp) in enumerate(rows):
-        bg = T["selection"] if i == 0 else "transparent"
-        trs += (f'<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); height: 42px; align-items: center; '
-                f'background: {bg}; border-bottom: 1px solid {T["line"]};"><div style="padding: 8px;">{label}</div><div style="padding: 8px;">{inp}</div></div>')
-    table = f'<div style="display: flex; flex-direction: column; background: {T["card"]};">{thead}{trs}</div>'
+    """Keys page with a selection in progress: toolbar above the search field, undo bar under the table."""
+    rows, selected = _rows_from_cfg()
+    toolbar = (f'<div style="display: flex; align-items: center; gap: 10px; background: {T["field"]}; '
+               f'border: 1px solid {T["accent"]}; border-radius: 12px; padding: 8px 8px 8px 14px;">'
+               f'<span style="color: {T["accent"]}; font-weight: 600;">3 selected</span>'
+               f'<div style="flex: 1;"></div>{button("Remove 3 pads")}{button("Delete row")}{button("Delete column")}{button("Clear", kind="quiet")}</div>')
     c1 = card(
         section("Pads"),
-        muted("Double-click a cell to edit. Leave Input empty to use the label, or select a pad and capture a key or controller button."),
-        switch("Show all pads"),
+        muted("Select pads on the layout or in the table. Delete removes the selection; Undo brings it back."),
+        switch("Show all pads", on=True),
+        pad_map(756, 220),
+        toolbar,
         f'<div style="display: flex; align-items: center; gap: 10px;">{field("Search by label or input", placeholder=True, flex=1)}{muted("30 / 30 pads", wrap=False)}</div>',
-        f'<div style="display: flex; align-items: center; gap: 10px;">{button("Record input", kind="primary")}<div style="flex: 1;"></div>{button("Add pad")}{button("Remove", kind="quiet")}</div>',
-        f'<div style="display: flex; align-items: center; gap: 10px;">{button("Add row")}{button("Add column")}</div>',
-        muted("Selected: Page Up"),
-        table,
+        pad_table(rows, selected),
+        undo_bar(),
+        f'<div style="display: flex; align-items: center; gap: 10px;">{button("Record input", kind="primary")}<div style="flex: 1;"></div>{button("Add pad")}{button("Add row")}{button("Add column")}</div>',
         switch("Edit position &amp; size"),
     )
     return window("Keys", page("Keys &amp; inputs", "Choose a pad. Record an input. Make it yours.", c1, disclosure("Sticks &amp; d-pads")), height=KEYS_H)
@@ -280,6 +282,9 @@ def color_button(hexval):
 
 
 def appearance_page():
+    ct = card(section("Settings window"),
+              form(form_row("Theme", combo("Dark", width=160), label_w=56)),
+              muted("Dark or light for this window. Overlay colors are set below."))
     c0 = card(section("Preview"), pad_preview())
     c1 = card(section("Key text"),
               form(form_row("Font", combo("Segoe UI", width=200), label_w=56),
@@ -293,7 +298,8 @@ def appearance_page():
             + "".join(grid_cells) + '</div>')
     c2 = card(section("Colors"), grid, f'<div style="display: flex;">{button("Reset colors", kind="quiet")}</div>', extra="flex: 1;")
     columns = f'<div style="display: flex; gap: 16px; align-items: stretch;">{c1}{c2}</div>'
-    return window("Appearance", page("Appearance", "Make it yours. Preview your font and colors as you edit.", c0, columns))
+    return window("Appearance", page("Appearance", "Make it yours. Preview your font and colors as you edit.", ct, c0, columns),
+                  height=H + 120)
 
 
 def tile(svg_body):
@@ -758,9 +764,7 @@ def mouse_board():
 
 
 
-# ---- prototype: bulk delete on the Keys page (wayfinder ticket 05) ----------
-# Three structurally different options. Selection = the pads in column 3 of the
-# Cyborg 2 layout, as if the user ctrl-clicked them. Throwaway once one wins.
+# ---- Keys page pieces (visual layout, table, undo bar) ------------------------
 def _cfg_keys():
     with open(os.path.join(os.path.dirname(OUT), "config.json"), encoding="utf-8") as f:
         return json.load(f)["keys"]
@@ -837,268 +841,6 @@ def undo_bar(text="Undo delete · 12 pads"):
             f'font-weight: 600;">{text}<span style="color: {T["muted"]}; font-weight: 400;">Ctrl+Z</span></div>')
 
 
-KEYS_TITLE = ("Keys &amp; inputs", "Choose a pad. Record an input. Make it yours.")
-
-
-def bulk_a():
-    """Option A: today's page; Remove counts the selection, Delete row/column join Add row/Add column."""
-    rows, selected = _rows_from_cfg()
-    c1 = card(
-        section("Pads"),
-        muted("Ctrl-click or shift-click to select several pads. Delete removes the selection."),
-        switch("Show all pads", on=True),
-        pad_map(756, 220),
-        f'<div style="display: flex; align-items: center; gap: 10px;">{field("Search by label or input", placeholder=True, flex=1)}{muted("30 / 30 pads", wrap=False)}</div>',
-        f'<div style="display: flex; align-items: center; gap: 10px;">{button("Record input", kind="primary")}<div style="flex: 1;"></div>{button("Add pad")}{button("Remove 3 pads", kind="quiet")}</div>',
-        f'<div style="display: flex; align-items: center; gap: 10px;">{button("Add row")}{button("Add column")}<div style="width: 18px;"></div>{button("Delete row")}{button("Delete column")}</div>',
-        muted("3 pads selected"),
-        pad_table(rows, selected),
-        undo_bar(),
-        switch("Edit position &amp; size"),
-    )
-    return window("Keys", page(*KEYS_TITLE, c1, disclosure("Sticks &amp; d-pads")), height=KEYS_H)
-
-
-def bulk_b():
-    """Option B: a selection toolbar exists only while pads are selected; Add controls stay quiet."""
-    rows, selected = _rows_from_cfg()
-    toolbar = (f'<div style="display: flex; align-items: center; gap: 10px; background: {T["field"]}; '
-               f'border: 1px solid {T["accent"]}; border-radius: 12px; padding: 8px 8px 8px 14px;">'
-               f'<span style="color: {T["accent"]}; font-weight: 600;">3 selected</span>'
-               f'<div style="flex: 1;"></div>{button("Delete")}{button("Delete row")}{button("Delete column")}{button("Clear", kind="quiet")}</div>')
-    c1 = card(
-        section("Pads"),
-        muted("Select pads here or in the table. A toolbar shows what you can do with the selection."),
-        switch("Show all pads", on=True),
-        pad_map(756, 220),
-        toolbar,
-        f'<div style="display: flex; align-items: center; gap: 10px;">{field("Search by label or input", placeholder=True, flex=1)}{muted("30 / 30 pads", wrap=False)}</div>',
-        pad_table(rows, selected),
-        f'<div style="display: flex; align-items: center; gap: 10px;">{button("Record input", kind="primary")}<div style="flex: 1;"></div>{button("Add pad")}{button("Add row")}{button("Add column")}</div>',
-        f'<div style="display: flex; justify-content: flex-end;">{undo_bar()}</div>',
-        switch("Edit position &amp; size"),
-    )
-    return window("Keys", page(*KEYS_TITLE, c1, disclosure("Sticks &amp; d-pads")), height=KEYS_H)
-
-
-def bulk_c():
-    """Option C: visual first; big layout with a drag-box, actions in a side rail, table demoted to a compact list."""
-    rows, selected = _rows_from_cfg()
-    rail = (f'<div style="display: flex; flex-direction: column; gap: 8px; width: 176px; flex: 0 0 auto;">'
-            f'{button("Record input", kind="primary")}<div style="height: 6px;"></div>'
-            f'{section("Add")}{button("Pad")}{button("Row")}{button("Column")}<div style="height: 6px;"></div>'
-            f'{section("Delete")}{button("3 selected")}{button("Their rows")}{button("Their columns")}'
-            f'<div style="height: 6px;"></div>{undo_bar("Undo · 12 pads")}</div>')
-    body = f'<div style="display: flex; gap: 16px; align-items: flex-start;">{pad_map(560, 330, marquee=True)}{rail}</div>'
-    c1 = card(
-        section("Pads"),
-        muted("Drag a box or ctrl-click pads on the layout. Everything you can do with them sits on the right."),
-        body,
-        f'<div style="display: flex; align-items: center; gap: 10px;">{field("Search by label or input", placeholder=True, flex=1)}{muted("3 selected · 30 pads", wrap=False)}</div>',
-        pad_table(rows[:8], selected, height=34),
-        switch("Edit position &amp; size"),
-    )
-    return window("Keys", page(*KEYS_TITLE, c1, disclosure("Sticks &amp; d-pads")), height=KEYS_H)
-
-
-def bulk_final():
-    """Winner (2026-09-12): B's selection toolbar, search directly above the table, A's full-width undo bar under it."""
-    rows, selected = _rows_from_cfg()
-    toolbar = (f'<div style="display: flex; align-items: center; gap: 10px; background: {T["field"]}; '
-               f'border: 1px solid {T["accent"]}; border-radius: 12px; padding: 8px 8px 8px 14px;">'
-               f'<span style="color: {T["accent"]}; font-weight: 600;">3 selected</span>'
-               f'<div style="flex: 1;"></div>{button("Delete")}{button("Delete row")}{button("Delete column")}{button("Clear", kind="quiet")}</div>')
-    c1 = card(
-        section("Pads"),
-        muted("Select pads on the layout or in the table. Delete removes the selection; Undo brings it back."),
-        switch("Show all pads", on=True),
-        pad_map(756, 220),
-        toolbar,
-        f'<div style="display: flex; align-items: center; gap: 10px;">{field("Search by label or input", placeholder=True, flex=1)}{muted("30 / 30 pads", wrap=False)}</div>',
-        pad_table(rows, selected),
-        undo_bar(),
-        f'<div style="display: flex; align-items: center; gap: 10px;">{button("Record input", kind="primary")}<div style="flex: 1;"></div>{button("Add pad")}{button("Add row")}{button("Add column")}</div>',
-        switch("Edit position &amp; size"),
-    )
-    return window("Keys", page(*KEYS_TITLE, c1, disclosure("Sticks &amp; d-pads")), height=KEYS_H)
-
-
-BULK_OPTIONS = {
-    "BulkFinal.dc.html": (bulk_final, "Keys · bulk delete (chosen)"),
-    "BulkA.dc.html": (bulk_a, "Option A · Buttons row"),
-    "BulkB.dc.html": (bulk_b, "Option B · Selection toolbar"),
-    "BulkC.dc.html": (bulk_c, "Option C · Visual first"),
-}
-
-
-# ---- prototype: settings header without a Save button (wayfinder ticket 07) ---
-# Layouts always autosave, so the header loses "Save layout" and gains Duplicate /
-# Rename. Three structurally different options. Throwaway once one wins.
-def _header_shell(*rows):
-    return (f'<div style="display: flex; flex-direction: column; gap: 18px; background: {T["card"]}; '
-            f'border-bottom: 1px solid {T["line"]}; padding: 20px 26px 18px 26px;">' + "".join(rows) + '</div>')
-
-
-def _tagline_row(right=""):
-    return (f'<div style="display: flex; align-items: center; gap: 10px;">{muted("Every move. On display.", wrap=False)}'
-            f'<div style="flex: 1;"></div>{right}<span>Theme</span>{combo("Dark", width=100)}</div>')
-
-
-def header_a():
-    """Option A: today's row minus Save; Duplicate / Rename / Delete live under More; autosave note under the row."""
-    return _header_shell(
-        _tagline_row(),
-        f'<div style="display: flex; align-items: center; gap: 10px;">{muted("Layout", wrap=False)}'
-        f'{combo("Azeron Cyborg II", flex=1)}{button("More", kind="quiet")}'
-        f'<div style="width: 8px;"></div>{button("+ New layout", kind="primary")}</div>',
-        f'<div style="margin-top: -8px;">{muted("Changes save automatically.")}</div>',
-    )
-
-
-def header_b():
-    """Option B: every layout action visible in one row; autosave note sits with the tagline."""
-    return _header_shell(
-        _tagline_row(muted("Changes save automatically", wrap=False) + '<div style="width: 18px;"></div>'),
-        f'<div style="display: flex; align-items: center; gap: 10px;">{muted("Layout", wrap=False)}'
-        f'{combo("Azeron Cyborg II", flex=1)}{button("Rename")}{button("Duplicate")}{button("Delete", kind="quiet")}'
-        f'<div style="width: 8px;"></div>{button("+ New layout", kind="primary")}</div>',
-    )
-
-
-def header_c():
-    """Option C: the layout name is the title; click it to rename, chevron to switch; actions on the right."""
-    title = (f'<div style="display: flex; align-items: center; gap: 12px;">'
-             f'<span style="font-size: {20*PT:.2f}px; font-weight: 700; letter-spacing: -0.5px;">Azeron Cyborg II</span>{arrow()}'
-             f'<span style="color: {T["muted"]}; font-size: {8*PT:.2f}px; border: 1px solid {T["line"]}; border-radius: 6px; padding: 2px 6px;">click to rename</span></div>')
-    return _header_shell(
-        _tagline_row(),
-        f'<div style="display: flex; align-items: center; gap: 10px;">'
-        f'<div style="display: flex; flex-direction: column; gap: 4px;">{title}{muted("Changes save automatically")}</div>'
-        f'<div style="flex: 1;"></div>{button("Duplicate")}{button("Delete", kind="quiet")}'
-        f'<div style="width: 8px;"></div>{button("+ New layout", kind="primary")}</div>',
-    )
-
-
-def _layout_body():
-    c1 = card(
-        section("Position your overlay"),
-        f'<div style="display: flex;">{button("Edit on screen", kind="primary", min_width=156, min_height=38)}</div>',
-        muted("Drag to reposition. Scroll to resize. Ctrl+Alt+E toggles this from anywhere; Esc or Done editing ends it."),
-        form(slider("Size", 10, "50%"), slider("Opacity", 83, "85%")),
-        disclosure("Precise position &amp; scale"),
-    )
-    return page("Layout", "Get your overlay in the right place, at the right size.",
-                c1, disclosure("Key dimensions"), disclosure("Keyboard shortcuts"))
-
-
-HEADER_OPTIONS = {
-    "HeaderA.dc.html": (header_a, "Option A · More menu"),
-    "HeaderB.dc.html": (header_b, "Option B · Actions in the row"),
-    "HeaderC.dc.html": (header_c, "Option C · Layout name as title"),
-}
-
-
-# Round 2 (user: B's buttons + C's big title, no autosave note, tagline placed better).
-def _title_block(sub=""):
-    return (f'<div style="display: flex; flex-direction: column; gap: 4px;">'
-            f'<div style="display: flex; align-items: center; gap: 12px;">'
-            f'<span style="font-size: {20*PT:.2f}px; font-weight: 700; letter-spacing: -0.5px;">Azeron Cyborg II</span>{arrow()}</div>{sub}</div>')
-
-
-def _actions(theme=False):
-    extra = f'<div style="width: 14px;"></div><span>Theme</span>{combo("Dark", width=100)}' if theme else ""
-    return (f'<div style="flex: 1;"></div>{button("Rename")}{button("Duplicate")}{button("Delete", kind="quiet")}'
-            f'<div style="width: 8px;"></div>{button("+ New layout", kind="primary")}{extra}')
-
-
-def header_d():
-    """Option D: tagline as a small uppercase eyebrow above the title; Theme keeps the top-right corner."""
-    eyebrow = (f'<div style="color: {T["accent"]}; font-size: {8*PT:.2f}px; font-weight: 600; letter-spacing: 2px; '
-               f'text-transform: uppercase;">Every move. On display.</div>')
-    return _header_shell(
-        f'<div style="display: flex; align-items: center; gap: 10px;">{eyebrow}<div style="flex: 1;"></div><span>Theme</span>{combo("Dark", width=100)}</div>',
-        f'<div style="display: flex; align-items: center; gap: 10px;">{_title_block()}{_actions()}</div>',
-    )
-
-
-def header_e():
-    """Option E: tagline leaves the header for a wordmark block at the top of the sidebar; header is one row."""
-    return _header_shell(
-        f'<div style="display: flex; align-items: center; gap: 10px;">{_title_block()}{_actions(theme=True)}</div>',
-    )
-
-
-def sidebar_brand(active):
-    """Sidebar whose Workspace label becomes a wordmark: mark, name, tagline."""
-    mark = (f'<svg width="30" height="30" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="flex: 0 0 auto;">'
-            f'<rect x="0" y="0" width="32" height="32" rx="8" fill="{T["accent"]}"></rect>'
-            f'<rect x="7" y="9" width="7" height="7" rx="2" fill="{T["accent_text"]}"></rect>'
-            f'<rect x="18" y="9" width="7" height="7" rx="2" fill="none" stroke="{T["accent_text"]}" stroke-width="1.6"></rect>'
-            f'<rect x="7" y="19" width="7" height="7" rx="2" fill="none" stroke="{T["accent_text"]}" stroke-width="1.6"></rect>'
-            f'<rect x="18" y="19" width="7" height="7" rx="2" fill="{T["accent_text"]}"></rect></svg>')
-    brand = (f'<div style="display: flex; flex-direction: column; gap: 8px;">'
-             f'<div style="display: flex; align-items: center; gap: 10px;">{mark}<span style="font-weight: 700; font-size: {12*PT:.2f}px; letter-spacing: -0.3px;">AZ-Overlay</span></div>'
-             f'<div style="color: {T["muted"]}; font-size: {9*PT:.2f}px; line-height: 1.35;">Every move.<br>On display.</div></div>')
-    items = []
-    for name in ("Layout", "Keys", "Appearance", "About", "Help"):
-        sel = name == active
-        bg = T["selection"] if sel else "transparent"
-        color = T["accent"] if sel else T["muted"]
-        weight = 600 if sel else 400
-        items.append(f'<div style="display: flex; align-items: center; gap: 12px; padding: 10px; margin: 3px 0; border-radius: 10px; '
-                     f'background: {bg}; color: {color}; font-weight: {weight};">{icon(name)}<span>{name}</span></div>')
-    return (f'<div style="width: 184px; flex: 0 0 auto; display: flex; flex-direction: column; gap: 18px; background: {T["sidebar"]}; '
-            f'border-right: 1px solid {T["line"]}; padding: 24px 12px 20px 12px;">{brand}'
-            f'<div style="display: flex; flex-direction: column;">' + "".join(items) + '</div></div>')
-
-
-def header_f():
-    """Option F: tagline sits under the big title in accent, where the autosave note was; one row, Theme far right."""
-    sub = f'<div style="color: {T["accent"]}; font-size: {9*PT:.2f}px;">Every move. On display.</div>'
-    return _header_shell(
-        f'<div style="display: flex; align-items: center; gap: 10px;">{_title_block(sub)}{_actions(theme=True)}</div>',
-    )
-
-
-HEADER_OPTIONS.update({
-    "HeaderD.dc.html": (header_d, "Option D · Eyebrow tagline"),
-    "HeaderE.dc.html": (header_e, "Option E · Tagline in the sidebar wordmark"),
-    "HeaderF.dc.html": (header_f, "Option F · Tagline under the title"),
-})
-HEADER_SIDEBARS = {"HeaderE.dc.html": sidebar_brand}
-
-
-# Final (user, 2026-09-12): Option F header without the Theme control; Theme moves to Appearance.
-def header_final():
-    sub = f'<div style="color: {T["accent"]}; font-size: {9*PT:.2f}px;">Every move. On display.</div>'
-    return _header_shell(
-        f'<div style="display: flex; align-items: center; gap: 10px;">{_title_block(sub)}{_actions()}</div>',
-    )
-
-
-def appearance_page_final():
-    """Appearance with a Settings theme card at the top: the Theme selector's new home."""
-    theme_card = card(section("Settings window"),
-                      form(form_row("Theme", combo("Dark", width=160), label_w=56)),
-                      muted("Dark or light for this window. Overlay colors are set below."))
-    c0 = card(section("Preview"), pad_preview())
-    c1 = card(section("Key text"),
-              form(form_row("Font", combo("Segoe UI", width=200), label_w=56),
-                   form_row("Size", stepper("13 pt"), label_w=56),
-                   form_row("Weight", switch("Bold", on=True), label_w=56)),
-              extra="flex: 1;")
-    grid_cells = [f'<div></div>', muted("Idle"), muted("Pressed")]
-    for part, text in (("fill", "Fill"), ("outline", "Border"), ("text", "Text")):
-        grid_cells += [f'<div>{text}</div>', color_button(C[f"idle_{part}"]), color_button(C[f"pressed_{part}"])]
-    grid = (f'<div style="display: grid; grid-template-columns: 56px 126px 126px; column-gap: 16px; row-gap: 8px; align-items: center;">'
-            + "".join(grid_cells) + '</div>')
-    c2 = card(section("Colors"), grid, f'<div style="display: flex;">{button("Reset colors", kind="quiet")}</div>', extra="flex: 1;")
-    columns = f'<div style="display: flex; gap: 16px; align-items: stretch;">{c1}{c2}</div>'
-    return window("Appearance", page("Appearance", "Make it yours. Preview your font and colors as you edit.", theme_card, c0, columns),
-                  height=H + 120, head=header_final())
-
-
-HEADER_OPTIONS["HeaderFinal.dc.html"] = (header_final, "Header · chosen")
 
 # ---- emit -----------------------------------------------------------------
 def settings_boards(theme, suffix=""):
@@ -1134,12 +876,6 @@ for fname, (style, name, motive, tradeoff) in PAD_OPTIONS.items():
     html, pw, ph = pad_sheet(style, name, motive, tradeoff)
     boards[fname] = html
     pad_boards[fname] = (pw, ph)
-for fname, (fn, _title) in BULK_OPTIONS.items():
-    boards[fname] = fn()
-boards["AppearanceFinal.dc.html"] = appearance_page_final()
-for fname, (fn, _title) in HEADER_OPTIONS.items():
-    _side = HEADER_SIDEBARS.get(fname)
-    boards[fname] = window("Layout", _layout_body(), head=fn(), side=_side("Layout") if _side else None)
 for name, inner in boards.items():
     if name in light_boards:
         T.clear()
@@ -1153,14 +889,14 @@ GX = W + 100
 canvas = {
     "artboards": [
         {"file": "Main.dc.html", "title": "Settings · Layout", "x": 0, "y": 0, "w": W, "h": H},
-        {"file": "Appearance.dc.html", "title": "Settings · Appearance", "x": GX, "y": 0, "w": W, "h": H},
+        {"file": "Appearance.dc.html", "title": "Settings · Appearance", "x": GX, "y": 0, "w": W, "h": H + 120},
         {"file": "Overlay.dc.html", "title": "Overlay · Cyborg 2 layout", "x": 2 * GX, "y": 0, "w": ow, "h": oh},
         {"file": "Keys.dc.html", "title": "Settings · Keys (full length)", "x": 0, "y": H + 140, "w": W, "h": KEYS_H},
         {"file": "Help.dc.html", "title": "Settings · Help (full length)", "x": GX, "y": H + 140, "w": W, "h": HELP_H},
         {"file": "About.dc.html", "title": "Settings · About", "x": 2 * GX, "y": H + 140, "w": W, "h": H},
         {"file": "MouseLayouts.dc.html", "title": "Overlay · Mouse layouts", "x": 0, "y": H + 140 + KEYS_H + 140, "w": mw, "h": mh},
         {"file": "LayoutLight.dc.html", "title": "Settings · Layout (light)", "page": "page-4", "x": 0, "y": 0, "w": W, "h": H},
-        {"file": "AppearanceLight.dc.html", "title": "Settings · Appearance (light)", "page": "page-4", "x": GX, "y": 0, "w": W, "h": H},
+        {"file": "AppearanceLight.dc.html", "title": "Settings · Appearance (light)", "page": "page-4", "x": GX, "y": 0, "w": W, "h": H + 120},
         {"file": "AboutLight.dc.html", "title": "Settings · About (light)", "page": "page-4", "x": 2 * GX, "y": 0, "w": W, "h": H},
         {"file": "KeysLight.dc.html", "title": "Settings · Keys (light, full length)", "page": "page-4", "x": 0, "y": H + 140, "w": W, "h": KEYS_H},
         {"file": "HelpLight.dc.html", "title": "Settings · Help (light, full length)", "page": "page-4", "x": GX, "y": H + 140, "w": W, "h": HELP_H},
@@ -1169,25 +905,13 @@ canvas = {
          "x": (i % 3) * (560 + 100), "y": (i // 3) * (360 + 140), "w": sw, "h": sh}
         for i, (fname, (sw, sh)) in enumerate(stick_boards.items())
     ] + [
-        {"file": fname, "title": BULK_OPTIONS[fname][1], "page": "page-5",
-         "x": i * GX, "y": 0, "w": W, "h": KEYS_H}
-        for i, fname in enumerate(BULK_OPTIONS)
-    ] + [
-        {"file": fname, "title": HEADER_OPTIONS[fname][1], "page": "page-6",
-         "x": (i % 3) * GX, "y": (i // 3) * (H + 140), "w": W, "h": H}
-        for i, fname in enumerate(HEADER_OPTIONS)
-    ] + [
-        {"file": "AppearanceFinal.dc.html", "title": "Appearance · Theme moved here", "page": "page-6",
-         "x": GX, "y": 3 * (H + 140), "w": W, "h": H + 120},
-    ] + [
         {"file": fname, "title": PAD_OPTIONS[fname][1], "page": "page-3",
          "x": (i % 3) * (560 + 100), "y": (i // 3) * (300 + 140), "w": pw, "h": ph}
         for i, (fname, (pw, ph)) in enumerate(pad_boards.items())
     ],
     "pages": [{"id": "page-1", "name": "Screens"}, {"id": "page-4", "name": "Screens · Light"},
-              {"id": "page-2", "name": "Stick directions"}, {"id": "page-3", "name": "Pad styles"},
-              {"id": "page-5", "name": "Bulk delete (prototype)"}, {"id": "page-6", "name": "Header (prototype)"}],
-    "launch": {"view": "canvas", "page": "page-4"},
+              {"id": "page-2", "name": "Stick directions"}, {"id": "page-3", "name": "Pad styles"}],
+    "launch": {"view": "canvas", "page": "page-1"},
 }
 with open(os.path.join(OUT, "canvas.json"), "w", encoding="utf-8") as f:
     json.dump(canvas, f, indent=2)

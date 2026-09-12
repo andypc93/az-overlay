@@ -1349,10 +1349,14 @@ class SettingsWindow(QWidget):
         guide, guide_layout = card()
         guide_layout.addWidget(section("Quick start"))
         for number, (heading, description) in enumerate((
-            ("Pick your layout", "Choose + New layout and start with a template for your device."),
-            ("Find the perfect spot", "On Layout, choose Edit on screen. Drag to move, scroll to resize, then choose Done editing."),
+            ("Pick your layout", "Choose + New layout and start with a template for your device. "
+                                 "Rename, Duplicate, and Delete sit next to the layout name."),
+            ("Find the perfect spot", "Press Ctrl+Alt+E, or choose Edit on screen on Layout. Drag to move, scroll to resize, "
+                                      "then press Esc, Ctrl+Alt+E again, or Done editing."),
             ("Connect your inputs", "On Keys, select a pad and choose Record input to assign a key or controller button."),
-            ("Make it yours", "Adjust fonts and colors on Appearance. Every change is saved automatically."),
+            ("Tidy up", "Ctrl-click or drag a box to select several pads, then Remove, Delete row, or Delete column. "
+                        "Undo delete (Ctrl+Z) brings the last deletion back."),
+            ("Make it yours", "Adjust fonts, colors, and the window theme on Appearance. Every change is saved automatically."),
         ), start=1):
             row = QHBoxLayout()
             row.setSpacing(14)

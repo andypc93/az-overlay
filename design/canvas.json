@@ -14,7 +14,7 @@
       "x": 1140,
       "y": 0,
       "w": 1040,
-      "h": 860
+      "h": 980
     },
     {
       "file": "Overlay.dc.html",
@@ -72,7 +72,7 @@
       "x": 1140,
       "y": 0,
       "w": 1040,
-      "h": 860
+      "h": 980
     },
     {
       "file": "AboutLight.dc.html",
@@ -147,114 +147,6 @@
       "h": 360
     },
     {
-      "file": "BulkFinal.dc.html",
-      "title": "Keys \u00b7 bulk delete (chosen)",
-      "page": "page-5",
-      "x": 0,
-      "y": 0,
-      "w": 1040,
-      "h": 1100
-    },
-    {
-      "file": "BulkA.dc.html",
-      "title": "Option A \u00b7 Buttons row",
-      "page": "page-5",
-      "x": 1140,
-      "y": 0,
-      "w": 1040,
-      "h": 1100
-    },
-    {
-      "file": "BulkB.dc.html",
-      "title": "Option B \u00b7 Selection toolbar",
-      "page": "page-5",
-      "x": 2280,
-      "y": 0,
-      "w": 1040,
-      "h": 1100
-    },
-    {
-      "file": "BulkC.dc.html",
-      "title": "Option C \u00b7 Visual first",
-      "page": "page-5",
-      "x": 3420,
-      "y": 0,
-      "w": 1040,
-      "h": 1100
-    },
-    {
-      "file": "HeaderA.dc.html",
-      "title": "Option A \u00b7 More menu",
-      "page": "page-6",
-      "x": 0,
-      "y": 0,
-      "w": 1040,
-      "h": 860
-    },
-    {
-      "file": "HeaderB.dc.html",
-      "title": "Option B \u00b7 Actions in the row",
-      "page": "page-6",
-      "x": 1140,
-      "y": 0,
-      "w": 1040,
-      "h": 860
-    },
-    {
-      "file": "HeaderC.dc.html",
-      "title": "Option C \u00b7 Layout name as title",
-      "page": "page-6",
-      "x": 2280,
-      "y": 0,
-      "w": 1040,
-      "h": 860
-    },
-    {
-      "file": "HeaderD.dc.html",
-      "title": "Option D \u00b7 Eyebrow tagline",
-      "page": "page-6",
-      "x": 0,
-      "y": 1000,
-      "w": 1040,
-      "h": 860
-    },
-    {
-      "file": "HeaderE.dc.html",
-      "title": "Option E \u00b7 Tagline in the sidebar wordmark",
-      "page": "page-6",
-      "x": 1140,
-      "y": 1000,
-      "w": 1040,
-      "h": 860
-    },
-    {
-      "file": "HeaderF.dc.html",
-      "title": "Option F \u00b7 Tagline under the title",
-      "page": "page-6",
-      "x": 2280,
-      "y": 1000,
-      "w": 1040,
-      "h": 860
-    },
-    {
-      "file": "HeaderFinal.dc.html",
-      "title": "Header \u00b7 chosen",
-      "page": "page-6",
-      "x": 0,
-      "y": 2000,
-      "w": 1040,
-      "h": 860
-    },
-    {
-      "file": "AppearanceFinal.dc.html",
-      "title": "Appearance \u00b7 Theme moved here",
-      "page": "page-6",
-      "x": 1140,
-      "y": 3000,
-      "w": 1040,
-      "h": 980
-    },
-    {
       "file": "PadClassic.dc.html",
       "title": "Classic",
       "page": "page-3",
@@ -316,18 +208,10 @@
     {
       "id": "page-3",
       "name": "Pad styles"
-    },
-    {
-      "id": "page-5",
-      "name": "Bulk delete (prototype)"
-    },
-    {
-      "id": "page-6",
-      "name": "Header (prototype)"
     }
   ],
   "launch": {
     "view": "canvas",
-    "page": "page-4"
+    "page": "page-1"
   }
 }

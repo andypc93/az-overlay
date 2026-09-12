@@ -713,3 +713,12 @@ def test_theme_selector_lives_on_the_appearance_page(editor):
     appearance = editor.stack.widget(editor.PAGES.index("Appearance"))
     assert editor.theme_combo in appearance.findChildren(settings_ui.QComboBox)
     assert editor.theme_combo not in _header(editor).findChildren(settings_ui.QComboBox)
+
+
+# ---- ticket 16: docs -------------------------------------------------------------
+def test_help_page_describes_the_new_editing_flow(editor):
+    help_page = editor.stack.widget(editor.PAGES.index("Help"))
+    text = " ".join(lbl.text() for lbl in help_page.findChildren(settings_ui.QLabel))
+    assert "Ctrl+Alt+E" in text and "Undo" in text and "Appearance" in text
+    assert "saved automatically" in text.lower()
+    assert "Save layout" not in text

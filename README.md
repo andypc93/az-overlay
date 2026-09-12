@@ -52,8 +52,12 @@ rename, use the arrow next to it to switch layouts, and **Rename**,
 
 ### 2. Position the overlay
 
-On **Layout**, select **Edit on screen**. Drag to move, scroll to resize, then
-select **Done editing**. Use the **Size** and **Opacity** sliders for quick
+Press **Ctrl + Alt + E** (or select **Edit on screen** on **Layout**, or the
+tray menu item of the same name). Drag to move, scroll to resize, then press
+**Esc**, **Ctrl + Alt + E** again, or **Done editing**. Editing also ends when
+you switch back to your game, so game input never moves the overlay. The
+overlay can sit partly off-screen, but never entirely off: it is pulled back into
+view if it ever would be. Use the **Size** and **Opacity** sliders for quick
 adjustments. Expand **Precise position & scale**, **Key dimensions**, or
 **Keyboard shortcuts** when you need finer control.
 
