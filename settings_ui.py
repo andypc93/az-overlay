@@ -4,8 +4,8 @@ import os
 import tempfile
 from math import ceil
 
-from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QUrl, QUrlQuery, Property, Signal
-from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QLinearGradient, QPainter, QPalette, QPen, QPixmap, QPolygonF
+from PySide6.QtCore import QEvent, QItemSelectionModel, QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QUrl, QUrlQuery, Property, Signal
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QKeySequence, QLinearGradient, QPainter, QPalette, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QAbstractItemView, QAbstractSpinBox, QBoxLayout, QCheckBox, QColorDialog, QComboBox, QDialog,
     QDialogButtonBox, QDoubleSpinBox, QFontComboBox, QFormLayout, QFrame, QGridLayout,
@@ -471,15 +471,20 @@ class PadPreview(QWidget):
 class PadLayoutEditor(QWidget):
     """Fit the complete layout into a clickable view, including unassigned pads."""
 
-    pad_selected = Signal(int)
+    selection_changed = Signal(object)  # set of pad indices the user picked here
+    delete_requested = Signal()  # Delete pressed while this view has focus
 
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self.selected = -1
+        self.selected = set()
+        self._box_anchor = None  # drag-box start, in widget coords
+        self._box = None  # QRectF while a drag box is open
+        self._box_base = set()  # selection kept under a ctrl-drag box
         self.setMinimumHeight(240)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAccessibleName("All pads layout")
-        self.setToolTip("Click any pad to select its mapping below. Blank pads show their pad number.")
+        self.setToolTip("Click a pad to select it. Ctrl-click adds, drag a box to select many. Blank pads show their pad number.")
 
     def layout_rects(self):
         gap = self.cfg["gap"]
@@ -512,7 +517,7 @@ class PadLayoutEditor(QWidget):
         entries = keys + self.cfg.get("sticks", [])
         rects = self.layout_rects()
         for i, (entry, rect) in enumerate(zip(entries, rects)):
-            selected = i < len(keys) and i == self.selected
+            selected = i < len(keys) and i in self.selected
             p.setBrush(QColor(t["selection"] if selected else t["field"]))
             p.setPen(QPen(QColor(t["accent"] if selected else t["strong_line"]), 2 if selected else 1))
             circle = i >= len(keys) or entry.get("shape", self.cfg.get("shape")) in ("circle", "dot")
@@ -528,17 +533,61 @@ class PadLayoutEditor(QWidget):
         if not rects:
             p.setPen(QColor(t["muted"]))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Add a pad, row, or column to start.")
+        if self._box is not None:
+            fill = QColor(t["accent"])
+            fill.setAlpha(28)
+            p.setBrush(fill)
+            p.setPen(QPen(QColor(t["accent"]), 1, Qt.PenStyle.DashLine))
+            p.drawRect(self._box.normalized())
         p.end()
 
+    def _pad_at(self, pos):
+        rects = self.layout_rects()[:len(self.cfg["keys"])]
+        for i in reversed(range(len(rects))):
+            if rects[i].contains(pos):
+                return i
+        return None
+
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
+        self.setFocus()
+        ctrl = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+        hit = self._pad_at(event.position())
+        if hit is not None:
+            chosen = set(self.selected) ^ {hit} if ctrl else {hit}
+            self.selection_changed.emit(chosen)
+        else:
+            self._box_anchor = event.position()
+            self._box = QRectF(self._box_anchor, self._box_anchor)
+            self._box_base = set(self.selected) if ctrl else set()
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._box_anchor is not None:
+            self._box = QRectF(self._box_anchor, event.position())
+            self.update()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._box_anchor is not None:
+            box = QRectF(self._box_anchor, event.position()).normalized()
+            self._box_anchor = self._box = None
             rects = self.layout_rects()[:len(self.cfg["keys"])]
-            for i in reversed(range(len(rects))):
-                if rects[i].contains(event.position()):
-                    self.pad_selected.emit(i)
-                    event.accept()
-                    return
-        super().mousePressEvent(event)
+            hits = {i for i, r in enumerate(rects) if box.intersects(r)}
+            self.selection_changed.emit(self._box_base | hits)
+            self.update()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Delete:
+            self.delete_requested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
 
 class TemplateDialog(QDialog):
@@ -942,11 +991,36 @@ class SettingsWindow(QWidget):
         l1.addWidget(self.show_all_pads)
         self.pad_layout = PadLayoutEditor(self.cfg)
         self.pad_layout.hide()
-        self.pad_layout.pad_selected.connect(self._select_visual_pad)
+        self.pad_layout.selection_changed.connect(self._apply_visual_selection)
+        self.pad_layout.delete_requested.connect(self._delete_key)
         self.show_all_pads.toggled.connect(self.pad_layout.setVisible)
         l1.addWidget(self.pad_layout)
         self.table = QTableWidget(0, 6)
-        search_row = QHBoxLayout()
+        # Selection toolbar: only exists while pads are selected.
+        self.selection_bar = QWidget()
+        self.selection_bar.setObjectName("inline")
+        bar = QHBoxLayout(self.selection_bar)
+        bar.setContentsMargins(12, 6, 6, 6)
+        self.selection_count = muted("")
+        bar.addWidget(self.selection_count)
+        bar.addStretch(1)
+        btn_del = self.btn_remove_pad = QPushButton("Remove")
+        btn_del.setToolTip("Delete every selected pad (Delete key).")
+        btn_del.clicked.connect(self._remove_pad)
+        bar.addWidget(btn_del)
+        self.btn_delete_row = QPushButton("Delete row")
+        self.btn_delete_row.setEnabled(False)
+        self.btn_delete_column = QPushButton("Delete column")
+        self.btn_delete_column.setEnabled(False)
+        bar.addWidget(self.btn_delete_row)
+        bar.addWidget(self.btn_delete_column)
+        self.btn_clear_selection = QPushButton("Clear")
+        self.btn_clear_selection.setObjectName("quiet")
+        self.btn_clear_selection.clicked.connect(self.table.clearSelection)
+        bar.addWidget(self.btn_clear_selection)
+        self.selection_bar.hide()
+        l1.addWidget(self.selection_bar)
+        self.search_row = search_row = QHBoxLayout()
         self.key_search = QLineEdit()
         self.key_search.setPlaceholderText("Search by label or input")
         self.key_search.setClearButtonEnabled(True)
@@ -972,9 +1046,13 @@ class SettingsWindow(QWidget):
         self.table.setAlternatingRowColors(False)
         self.table.setShowGrid(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.setMinimumHeight(260)
         self.table.itemChanged.connect(self._table_edited)
+        self.table.installEventFilter(self)
+        l1.addWidget(self.table)
+        self.no_keys = muted("No matching pads. Try another search or add a pad.")
+        l1.addWidget(self.no_keys)
         row = QHBoxLayout()
         self.btn_capture = QPushButton("Record input")
         self.btn_capture.setObjectName("primary")
@@ -983,30 +1061,19 @@ class SettingsWindow(QWidget):
         self.btn_capture.toggled.connect(self._toggle_capture)
         btn_add = QPushButton("Add pad")
         btn_add.clicked.connect(self._add_pad)
-        btn_del = self.btn_remove_pad = QPushButton("Remove")
-        btn_del.setObjectName("quiet")
-        btn_del.clicked.connect(self._remove_pad)
-        row.addWidget(self.btn_capture)
-        row.addStretch(1)
-        row.addWidget(btn_add)
-        row.addWidget(btn_del)
-        l1.addLayout(row)
-        grow_row = QHBoxLayout()
         self.btn_add_row = QPushButton("Add row")
         self.btn_add_row.setToolTip("Add a row of blank pads below the layout, spanning its pad columns.")
         self.btn_add_row.clicked.connect(lambda: self._add_pad_line("row"))
         self.btn_add_column = QPushButton("Add column")
         self.btn_add_column.setToolTip("Add a column of blank pads to the right, spanning its pad rows.")
         self.btn_add_column.clicked.connect(lambda: self._add_pad_line("col"))
-        grow_row.addWidget(self.btn_add_row)
-        grow_row.addWidget(self.btn_add_column)
-        grow_row.addStretch(1)
-        l1.addLayout(grow_row)
-        self.selection_hint = muted("Select a pad below to record its input.")
-        l1.addWidget(self.selection_hint)
-        l1.addWidget(self.table)
-        self.no_keys = muted("No matching pads. Try another search or add a pad.")
-        l1.addWidget(self.no_keys)
+        row.addWidget(self.btn_capture)
+        row.addStretch(1)
+        row.addWidget(btn_add)
+        row.addWidget(self.btn_add_row)
+        row.addWidget(self.btn_add_column)
+        l1.addLayout(row)
+        self.pads_card_layout = l1
         self.show_geometry = Switch("Edit position && size")
         self.show_geometry.setToolTip("Show position and dimensions in key units.")
         self.show_geometry.toggled.connect(self._show_key_geometry)
@@ -1355,11 +1422,45 @@ class SettingsWindow(QWidget):
         self._schedule_save()
 
     # keys table
-    def _select_visual_pad(self, row):
+    def selected_pads(self):
+        """Indices into the layout's pad list, in table order."""
+        return sorted(i.row() for i in self.table.selectionModel().selectedRows())
+
+    def _set_selected_pads(self, rows):
+        model = self.table.model()
+        sel = self.table.selectionModel()
+        sel.clearSelection()
+        flags = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
+        for r in rows:
+            sel.select(model.index(r, 0), flags)
+        if rows:
+            sel.setCurrentIndex(model.index(max(rows), 0), QItemSelectionModel.SelectionFlag.NoUpdate)
+            self.table.scrollToItem(self.table.item(max(rows), 0))
+
+    def _apply_visual_selection(self, indices):
+        """The user picked pads on the visual layout: the table follows."""
         self.btn_capture.setChecked(False)
-        self.key_search.clear()
-        self.table.selectRow(row)
-        self.table.scrollToItem(self.table.item(row, 0))
+        if self.key_search.text():
+            self.key_search.clear()
+        self._set_selected_pads(sorted(indices))
+
+    def _select_visible_pads(self):
+        self._set_selected_pads([r for r in range(self.table.rowCount()) if not self.table.isRowHidden(r)])
+
+    def _delete_key(self):
+        if self.btn_capture.isChecked():
+            return  # recording an input: Delete is the key being recorded, not a command
+        self._remove_pad()
+
+    def eventFilter(self, obj, event):
+        if obj is self.table and event.type() == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Delete and not event.modifiers():
+                self._delete_key()
+                return True
+            if event.matches(QKeySequence.StandardKey.SelectAll):
+                self._select_visible_pads()
+                return True
+        return super().eventFilter(obj, event)
 
     def _show_key_geometry(self, visible):
         for column in range(2, 6):
@@ -1375,22 +1476,24 @@ class SettingsWindow(QWidget):
         self.key_count.setText(f"{visible} / {self.table.rowCount()} pads")
         self.no_keys.setVisible(visible == 0)
         self.table.setVisible(visible > 0)
-        if self.table.currentRow() >= 0 and self.table.isRowHidden(self.table.currentRow()):
+        if any(self.table.isRowHidden(r) for r in self.selected_pads()):
             self.table.clearSelection()
         self._pad_selection_changed()
 
     def _pad_selection_changed(self):
-        selected = bool(self.table.selectionModel().selectedRows())
-        self.pad_layout.selected = self.table.currentRow() if selected else -1
+        rows = self.selected_pads()
+        self.pad_layout.selected = set(rows)
         self.pad_layout.update()
-        self.btn_capture.setEnabled(selected)
-        self.btn_remove_pad.setEnabled(selected)
-        if selected:
-            label = self.cfg["keys"][self.table.currentRow()].get("label") or "Untitled pad"
-            self.selection_hint.setText(f"Selected: {label}")
+        self.btn_capture.setEnabled(len(rows) == 1)
+        self.btn_remove_pad.setEnabled(bool(rows))
+        self.btn_remove_pad.setText(f"Remove {len(rows)} pads" if len(rows) > 1 else "Remove")
+        self.selection_bar.setVisible(bool(rows))
+        if len(rows) == 1:
+            label = self.cfg["keys"][rows[0]].get("label") or "Untitled pad"
+            self.selection_count.setText(f"Selected: {label}")
         else:
-            self.selection_hint.setText("Select a pad below to record its input.")
-        if not selected:
+            self.selection_count.setText(f"{len(rows)} selected")
+        if not rows:
             self.btn_capture.setChecked(False)
 
     @staticmethod
@@ -1480,7 +1583,7 @@ class SettingsWindow(QWidget):
                 col, row = 0, row + 1
         self.cfg["keys"].append({"label": "", "col": col, "row": row, "w": 1, "h": 1})
         self._fill_table()
-        self.table.selectRow(self.table.rowCount() - 1)
+        self._set_selected_pads([self.table.rowCount() - 1])
         self._apply()
 
     def _add_pad_line(self, axis):
@@ -1500,15 +1603,16 @@ class SettingsWindow(QWidget):
             keys.append({"label": "", axis: edge, cross: start + offset, "w": 1, "h": 1})
         self.show_all_pads.setChecked(True)
         self._fill_table()
-        self.table.selectRow(first)
+        self._set_selected_pads([first])
         self.table.scrollToItem(self.table.item(first, 0))
         self._apply()
 
     def _remove_pad(self):
-        r = self.table.currentRow()
-        if r < 0:
+        rows = self.selected_pads()
+        if not rows:
             return
-        del self.cfg["keys"][r]
+        for r in reversed(rows):
+            del self.cfg["keys"][r]
         self._fill_table()
         self._apply()
 
@@ -1520,7 +1624,7 @@ class SettingsWindow(QWidget):
         self.overlay.capturing = on
         self.btn_capture.setText("Cancel recording" if on else "Record input")
         if on:
-            self.selection_hint.setText("Listening… press a key or controller button to assign it.")
+            self.selection_count.setText("Listening… press a key or controller button to assign it.")
         else:
             self._pad_selection_changed()
 
@@ -1538,7 +1642,7 @@ class SettingsWindow(QWidget):
         if not k.get("label") or k.get("label") == old_input:
             k["label"] = GAMEPAD_LABELS.get(name, name)
         self._fill_table()
-        self.table.selectRow(r)
+        self._set_selected_pads([r])
         self._apply()
 
     STICK_COLS = ("label", "up", "down", "left", "right", "col", "row", "w", "h")

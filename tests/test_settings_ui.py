@@ -4,7 +4,7 @@ from copy import deepcopy
 import json
 
 import pytest
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import QPoint, Signal, Qt
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
@@ -212,7 +212,7 @@ def test_visual_layout_selects_blank_pad_even_with_search(editor):
     assert all(editor.pad_layout.rect().contains(r.toAlignedRect()) for r in rects)
     QTest.mouseClick(editor.pad_layout, Qt.MouseButton.LeftButton, pos=rects[1].center().toPoint())
     assert editor.table.currentRow() == 1
-    assert editor.pad_layout.selected == 1
+    assert editor.pad_layout.selected == {1}
     assert not editor.key_search.text()
     assert editor.btn_capture.isEnabled()
     editor.show_all_pads.setChecked(False)
@@ -433,3 +433,103 @@ def test_edit_mode_started_elsewhere_flips_the_layout_button(editor):
     assert editor.btn_move.isChecked() and editor.btn_move.text() == "Done editing"
     editor.overlay.edit_mode_changed.emit(False)
     assert not editor.btn_move.isChecked() and editor.btn_move.text() == "Edit on screen"
+
+
+# ---- ticket 12: select many pads --------------------------------------------
+def _row_centre(editor, row):
+    return editor.table.visualItemRect(editor.table.item(row, 0)).center()
+
+
+def _show_keys_page(editor):
+    editor.show()
+    editor.nav.setCurrentRow(1)
+    editor.show_all_pads.setChecked(True)
+    editor.pad_layout.resize(640, 320)
+    QTest.qWait(50)
+
+
+def test_ctrl_click_selects_several_rows_and_the_layout_mirrors_them(editor):
+    _show_keys_page(editor)
+    editor.table.selectRow(0)
+    QTest.mouseClick(editor.table.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, _row_centre(editor, 2))
+    assert editor.selected_pads() == [0, 2]
+    assert editor.pad_layout.selected == {0, 2}
+    editor.table.clearSelection()
+    editor.table.selectRow(1)
+    QTest.mouseClick(editor.table.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ShiftModifier, _row_centre(editor, 3))
+    assert editor.selected_pads() == [1, 2, 3]
+    assert editor.pad_layout.selected == {1, 2, 3}
+
+
+def test_layout_ctrl_click_and_drag_box_drive_the_table(editor):
+    _show_keys_page(editor)
+    rects = editor.pad_layout.layout_rects()
+    QTest.mouseClick(editor.pad_layout, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, rects[0].center().toPoint())
+    assert editor.selected_pads() == [0]
+    QTest.mouseClick(editor.pad_layout, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, rects[1].center().toPoint())
+    assert editor.selected_pads() == [0, 1]
+    QTest.mouseClick(editor.pad_layout, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, rects[1].center().toPoint())
+    assert editor.selected_pads() == [0]
+    box = rects[0].united(rects[1]).united(rects[2]).adjusted(-2, -2, 2, 2)
+    inside = {i for i, r in enumerate(rects[:len(editor.cfg["keys"])]) if box.intersects(r)}
+    QTest.mousePress(editor.pad_layout, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, box.topLeft().toPoint())
+    QTest.mouseMove(editor.pad_layout, box.bottomRight().toPoint())
+    QTest.mouseRelease(editor.pad_layout, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, box.bottomRight().toPoint())
+    assert set(editor.selected_pads()) == inside and len(inside) >= 3
+
+
+def test_ctrl_a_under_a_search_filter_selects_only_matching_pads(editor):
+    _show_keys_page(editor)
+    editor.key_search.setText("F")
+    visible = [r for r in range(editor.table.rowCount()) if not editor.table.isRowHidden(r)]
+    assert 0 < len(visible) < editor.table.rowCount()
+    QTest.keyClick(editor.table, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    assert editor.selected_pads() == visible
+
+
+def test_remove_deletes_the_selection_and_keeps_every_other_pad_in_place(editor):
+    _show_keys_page(editor)
+    keys = [dict(k) for k in editor.cfg["keys"]]
+    sticks = len(editor.cfg.get("sticks", []))
+    editor.table.selectRow(1)
+    QTest.mouseClick(editor.table.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, _row_centre(editor, 3))
+    assert editor.btn_remove_pad.text() == "Remove 2 pads"
+    editor.btn_remove_pad.click()
+    assert editor.cfg["keys"] == [k for i, k in enumerate(keys) if i not in (1, 3)]
+    assert len(editor.cfg.get("sticks", [])) == sticks
+    assert editor.selected_pads() == []
+
+
+def test_delete_key_removes_the_selection_except_while_recording(editor):
+    _show_keys_page(editor)
+    n = len(editor.cfg["keys"])
+    editor.table.selectRow(0)
+    editor.btn_capture.setChecked(True)
+    QTest.keyClick(editor.table, Qt.Key.Key_Delete)
+    assert len(editor.cfg["keys"]) == n
+    editor.btn_capture.setChecked(False)
+    editor.table.selectRow(0)
+    QTest.keyClick(editor.table, Qt.Key.Key_Delete)
+    assert len(editor.cfg["keys"]) == n - 1
+    rects = editor.pad_layout.layout_rects()
+    QTest.mouseClick(editor.pad_layout, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, rects[0].center().toPoint())
+    QTest.keyClick(editor.pad_layout, Qt.Key.Key_Delete)
+    assert len(editor.cfg["keys"]) == n - 2
+
+
+def test_selection_toolbar_shows_only_with_a_selection(editor):
+    _show_keys_page(editor)
+    assert not editor.selection_bar.isVisible()
+    editor.table.selectRow(0)
+    QTest.mouseClick(editor.table.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, _row_centre(editor, 1))
+    assert editor.selection_bar.isVisible() and editor.selection_count.text() == "2 selected"
+    editor.btn_clear_selection.click()
+    assert editor.selected_pads() == [] and not editor.selection_bar.isVisible()
+
+
+def test_search_sits_directly_above_the_table(editor):
+    layout = editor.pads_card_layout
+    items = [layout.itemAt(i) for i in range(layout.count())]
+    table_at = next(i for i, it in enumerate(items) if it.widget() is editor.table)
+    search_at = next(i for i, it in enumerate(items) if it.layout() is editor.search_row)
+    assert table_at == search_at + 1

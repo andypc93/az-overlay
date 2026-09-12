@@ -84,9 +84,14 @@ pad. Enable **Edit position & size** to reveal geometry columns, or expand
 **Sticks & d-pads** to configure directional controls.
 
 Turn on **Show all pads** for a clickable layout that includes blank pads.
-Click a pad to select its mapping in the table. **Add row** adds blank pads
-below the layout; **Add column** adds them to the right. Both reveal the layout
-automatically so you can select and assign the new pads.
+Click a pad to select its mapping in the table; Ctrl-click adds more, and
+dragging a box on the layout selects everything inside it. The table supports
+Ctrl-click, Shift-click, and Ctrl+A (visible pads only, so search then Ctrl+A
+picks exactly what you searched for). A toolbar above the search field shows
+what you can do with the selection: **Remove** (or the Delete key) removes
+every selected pad. **Add row** adds blank pads below the layout; **Add column**
+adds them to the right. Both reveal the layout automatically so you can select
+and assign the new pads.
 
 ### 4. Set the style
 
