@@ -1,7 +1,7 @@
 """Overlay window behaviour (edit-mode drag) without keyboard or mouse hooks."""
 
 import pytest
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -121,3 +121,25 @@ def test_tray_edit_action_mirrors_edit_mode(window):
 def test_edit_hint_names_hotkey_and_escape(window):
     hint = window.edit_hint()
     assert "Ctrl+Alt+E" in hint and "Esc" in hint
+
+
+@pytest.fixture
+def one_screen(monkeypatch):
+    monkeypatch.setattr(overlay, "screen_rects", lambda: [QRect(0, 0, 2560, 1440)])
+
+
+def test_overlay_on_no_screen_is_pulled_back_into_view(window, one_screen):
+    window.cfg["x"], window.cfg["y"] = -5000, 200
+    window.apply()
+    assert window.cfg["x"] == 40 - window.width() and window.cfg["y"] == 200
+    assert window.x() == window.cfg["x"]
+    window.cfg["x"], window.cfg["y"] = 100, 9000
+    window.apply()
+    assert window.cfg["x"] == 100 and window.cfg["y"] == 1440 - 40
+
+
+@pytest.mark.parametrize("pos", [(-200, 300), (300, -200), (2400, 300), (300, 1300)])
+def test_overlay_half_off_an_edge_stays_put(window, one_screen, pos):
+    window.cfg["x"], window.cfg["y"] = pos
+    window.apply()
+    assert (window.cfg["x"], window.cfg["y"]) == pos and (window.x(), window.y()) == pos

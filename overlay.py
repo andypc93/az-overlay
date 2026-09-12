@@ -22,8 +22,8 @@ import sys
 import time
 
 from pynput import keyboard, mouse
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QFont, QFontMetrics, QFontMetricsF, QIcon, QPainter, QPainterPath, QPen, QPixmap, QTransform
+from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QBrush, QColor, QFont, QFontMetrics, QFontMetricsF, QGuiApplication, QIcon, QPainter, QPainterPath, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
 
 from gamepad import Gamepad, is_gamepad_input
@@ -714,6 +714,7 @@ class Overlay(QWidget):
         if not self.edit_mode:
             self.setWindowOpacity(cfg.get("opacity", 0.85))
         w, h = self.extent()
+        cfg["x"], cfg["y"] = visible_position(cfg["x"], cfg["y"], int(w), int(h), screen_rects())
         self.setGeometry(cfg["x"], cfg["y"], int(w), int(h))
         self.update()
 
@@ -1261,6 +1262,35 @@ class Overlay(QWidget):
         self.listener.stop()
         self.mouse_listener.stop()
         QApplication.quit()
+
+
+VISIBLE_MARGIN = 40  # logical px of the overlay that must stay on some screen
+
+
+def screen_rects():
+    return [s.geometry() for s in QGuiApplication.screens()]
+
+
+def visible_position(x, y, w, h, screens, margin=VISIBLE_MARGIN):
+    """(x, y) unchanged while the overlay touches any screen; otherwise the nearest
+    position on the closest screen where at least `margin` px of it is visible.
+    Partial off-screen placement is deliberate and left alone."""
+    if not screens:
+        return x, y
+    rect = QRect(x, y, w, h)
+    if any(rect.intersects(scr) for scr in screens):
+        return x, y
+    centre = rect.center()
+
+    def distance(scr):
+        dx = max(scr.left() - centre.x(), 0, centre.x() - scr.right())
+        dy = max(scr.top() - centre.y(), 0, centre.y() - scr.bottom())
+        return dx * dx + dy * dy
+
+    scr = min(screens, key=distance)
+    x = min(max(x, scr.left() - w + margin), scr.right() + 1 - margin)
+    y = min(max(y, scr.top() - h + margin), scr.bottom() + 1 - margin)
+    return x, y
 
 
 def tray_menu(overlay, open_settings):
