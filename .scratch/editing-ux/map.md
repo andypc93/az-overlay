@@ -43,6 +43,7 @@ rows/columns easily, (3) every edit persists automatically with no Save button, 
 ## Decisions so far
 
 <!-- one line per resolved ticket: [title](issues/NN-slug.md): gist -->
+- [Prototype: Keys page with multi-select and row/column delete](issues/05-keys-page-prototype.md): winner = B's selection toolbar (only while pads selected) above search + table, A's full-width Undo bar under the table, Add controls at the bottom; canvas linked on the ticket.
 - [New layout creation and naming](issues/04-new-layout-creation-flow.md): creation already autosaves; names unique case-insensitively after filename sanitising; Create auto-suffixes "(2)" on collision, blank name = template suggestion; Rename added (collision rejected inline); "Save as new" becomes Duplicate ("<name> copy", switches to copy); new layouts inherit colors/position/opacity.
 - [Remove the unnamed layout state](issues/03-no-unnamed-layout-state.md): every layout always named + on disk, Save button gone; empty profiles/ re-seeds bundled default; delete current -> first in list, deleting the last one allowed; word is "layout"; config.json = globals only with one-time "Recovered" migration; static "Changes save automatically" header text.
 - [Bulk delete: pads, rows, columns](issues/02-bulk-delete-interaction-model.md): shared multi-select in table + visual layout; Remove/Delete key/Delete row/Delete column act on it; column = centre-in-span rule; no relayout, sticks untouched; single-level delete-only Undo (button + Ctrl+Z), no dialogs.

@@ -1,7 +1,7 @@
 # Prototype: Keys page with multi-select and row/column delete
 
 Type: prototype
-Status: claimed
+Status: resolved
 Blocked by: 02
 
 ## Question
@@ -29,3 +29,27 @@ emitted as `design/BulkA.dc.html`, `BulkB.dc.html`, `BulkC.dc.html` and page-5
   table demoted to a compact list.
 
 Waiting on the user's reaction (which option, or which pieces from each).
+
+### Decision (2026-09-12)
+
+User: "B's toolbar with A's undo bar. Search bar goes under B toolbar since search
+bar is to look for things in the label list."
+
+## Answer
+
+Winning Keys page, top to bottom inside the Pads card:
+
+1. Show all pads switch, then the visual layout (selection highlighted).
+2. **Selection toolbar** (from Option B): visible only while pads are selected.
+   "N selected · Delete · Delete row · Delete column · Clear".
+3. **Search** field, directly above the table: it filters the label list, so it
+   sits with the table, not with the layout.
+4. Pads table.
+5. **Undo bar** (from Option A): full width under the table, "Undo delete · N pads
+   · Ctrl+Z", shown after a delete until the next non-delete edit.
+6. Record input · Add pad · Add row · Add column row, then Edit position & size.
+
+Canvas: https://claude.ai/code/artifact/f1218af6-0d38-4db9-98ff-7c71c4aeb252
+("Chosen" page = final; "Options" page = A/B/C). Source `design/gen.py`
+`bulk_final` -> `design/BulkFinal.dc.html`. Option C rejected (too much rework,
+table loses room).
