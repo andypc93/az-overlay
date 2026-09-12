@@ -10,6 +10,12 @@ T = dict(bg="#000000", card="#161616", field="#242424", line="#333333", text="#f
          hover="#303030", pressed="#3c3c3c", strong_line="#6a6a6a", disabled="#757575",
          badge_bg="#253314", badge_text="#b6ff00", selection="#253314", sidebar="#0b0b0b",
          preview="#121212", preview_end="#1f1f1f")
+DARK = dict(T)
+LIGHT = dict(bg="#f2f2f7", card="#ffffff", field="#f0f0f5", line="#e3e3eb", text="#1c1c1e",
+             muted="#6c6c76", accent="#416800", accent_text="#ffffff", accent_hover="#325100",
+             hover="#e8e8f0", pressed="#dddde7", strong_line="#aaaab5", disabled="#90909a",
+             badge_bg="#e8f7ed", badge_line="#e8f7ed", badge_text="#416800", selection="#e6f3cf",
+             sidebar="#eaeaf1", preview="#f5f8f0", preview_end="#eaf0df")
 # Overlay colors from config.json
 C = dict(idle_fill="#1e1e1e", idle_outline="#c9d400", pressed_fill="#c9d400",
          idle_text="#ffffff", pressed_text="#000000", pressed_outline="#c9d400")
@@ -19,7 +25,8 @@ PT = 96 / 72  # Qt pt -> css px
 W, H = 1040, 860
 KEYS_H, HELP_H = 1100, 960  # these pages scroll at the default 860 height; show them at full length
 
-BASE_CSS = f"""
+def base_css():
+    return f"""
     body {{ margin: 0; background: {T['bg']}; color: {T['text']}; font-family: {FONT}; font-size: {10*PT:.2f}px; }}
     a {{ color: {T['accent']}; text-decoration: none; }} a:hover {{ color: {T['accent_hover']}; }}
     * {{ box-sizing: border-box; }}
@@ -197,7 +204,7 @@ def doc(inner, extra_css=""):
 <body>
 <x-dc>
 <helmet>
-  <style>{BASE_CSS}{extra_css}
+  <style>{base_css()}{extra_css}
   </style>
 </helmet>
 {inner}
@@ -751,13 +758,25 @@ def mouse_board():
 
 
 # ---- emit -----------------------------------------------------------------
-boards = {
-    "Main.dc.html": layout_page(),
-    "Keys.dc.html": keys_page(),
-    "Appearance.dc.html": appearance_page(),
-    "About.dc.html": about_page(),
-    "Help.dc.html": help_page(),
-}
+def settings_boards(theme, suffix=""):
+    """The five settings pages in one theme. Every builder reads the shared T palette."""
+    T.clear()
+    T.update(DARK if theme == "dark" else LIGHT)
+    out = {
+        f"Main{suffix}.dc.html" if not suffix else f"Layout{suffix}.dc.html": layout_page(),
+        f"Keys{suffix}.dc.html": keys_page(),
+        f"Appearance{suffix}.dc.html": appearance_page(),
+        f"About{suffix}.dc.html": about_page(),
+        f"Help{suffix}.dc.html": help_page(),
+    }
+    T.clear()
+    T.update(DARK)
+    return out
+
+
+boards = settings_boards("dark")
+light_boards = settings_boards("light", "Light")
+boards.update(light_boards)
 overlay_html, ow, oh = overlay_page()
 boards["Overlay.dc.html"] = overlay_html
 stick_boards = {}
@@ -773,8 +792,13 @@ for fname, (style, name, motive, tradeoff) in PAD_OPTIONS.items():
     boards[fname] = html
     pad_boards[fname] = (pw, ph)
 for name, inner in boards.items():
+    if name in light_boards:
+        T.clear()
+        T.update(LIGHT)
     with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:
         f.write(doc(inner))
+    T.clear()
+    T.update(DARK)
 
 GX = W + 100
 canvas = {
@@ -786,6 +810,11 @@ canvas = {
         {"file": "Help.dc.html", "title": "Settings · Help (full length)", "x": GX, "y": H + 140, "w": W, "h": HELP_H},
         {"file": "About.dc.html", "title": "Settings · About", "x": 2 * GX, "y": H + 140, "w": W, "h": H},
         {"file": "MouseLayouts.dc.html", "title": "Overlay · Mouse layouts", "x": 0, "y": H + 140 + KEYS_H + 140, "w": mw, "h": mh},
+        {"file": "LayoutLight.dc.html", "title": "Settings · Layout (light)", "page": "page-4", "x": 0, "y": 0, "w": W, "h": H},
+        {"file": "AppearanceLight.dc.html", "title": "Settings · Appearance (light)", "page": "page-4", "x": GX, "y": 0, "w": W, "h": H},
+        {"file": "AboutLight.dc.html", "title": "Settings · About (light)", "page": "page-4", "x": 2 * GX, "y": 0, "w": W, "h": H},
+        {"file": "KeysLight.dc.html", "title": "Settings · Keys (light, full length)", "page": "page-4", "x": 0, "y": H + 140, "w": W, "h": KEYS_H},
+        {"file": "HelpLight.dc.html", "title": "Settings · Help (light, full length)", "page": "page-4", "x": GX, "y": H + 140, "w": W, "h": HELP_H},
     ] + [
         {"file": fname, "title": STICK_OPTIONS[fname][1], "page": "page-2",
          "x": (i % 3) * (560 + 100), "y": (i // 3) * (360 + 140), "w": sw, "h": sh}
@@ -795,9 +824,9 @@ canvas = {
          "x": (i % 3) * (560 + 100), "y": (i // 3) * (300 + 140), "w": pw, "h": ph}
         for i, (fname, (pw, ph)) in enumerate(pad_boards.items())
     ],
-    "pages": [{"id": "page-1", "name": "Screens"}, {"id": "page-2", "name": "Stick directions"},
-              {"id": "page-3", "name": "Pad styles"}],
-    "launch": {"view": "canvas", "page": "page-1"},
+    "pages": [{"id": "page-1", "name": "Screens"}, {"id": "page-4", "name": "Screens · Light"},
+              {"id": "page-2", "name": "Stick directions"}, {"id": "page-3", "name": "Pad styles"}],
+    "launch": {"view": "canvas", "page": "page-4"},
 }
 with open(os.path.join(OUT, "canvas.json"), "w", encoding="utf-8") as f:
     json.dump(canvas, f, indent=2)

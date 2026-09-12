@@ -57,6 +57,51 @@
       "h": 348
     },
     {
+      "file": "LayoutLight.dc.html",
+      "title": "Settings \u00b7 Layout (light)",
+      "page": "page-4",
+      "x": 0,
+      "y": 0,
+      "w": 1040,
+      "h": 860
+    },
+    {
+      "file": "AppearanceLight.dc.html",
+      "title": "Settings \u00b7 Appearance (light)",
+      "page": "page-4",
+      "x": 1140,
+      "y": 0,
+      "w": 1040,
+      "h": 860
+    },
+    {
+      "file": "AboutLight.dc.html",
+      "title": "Settings \u00b7 About (light)",
+      "page": "page-4",
+      "x": 2280,
+      "y": 0,
+      "w": 1040,
+      "h": 860
+    },
+    {
+      "file": "KeysLight.dc.html",
+      "title": "Settings \u00b7 Keys (light, full length)",
+      "page": "page-4",
+      "x": 0,
+      "y": 1000,
+      "w": 1040,
+      "h": 1100
+    },
+    {
+      "file": "HelpLight.dc.html",
+      "title": "Settings \u00b7 Help (light, full length)",
+      "page": "page-4",
+      "x": 1140,
+      "y": 1000,
+      "w": 1040,
+      "h": 960
+    },
+    {
       "file": "StickCurrent.dc.html",
       "title": "Current",
       "page": "page-2",
@@ -153,6 +198,10 @@
       "name": "Screens"
     },
     {
+      "id": "page-4",
+      "name": "Screens \u00b7 Light"
+    },
+    {
       "id": "page-2",
       "name": "Stick directions"
     },
@@ -163,6 +212,6 @@
   ],
   "launch": {
     "view": "canvas",
-    "page": "page-1"
+    "page": "page-4"
   }
 }
