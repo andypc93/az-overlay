@@ -722,3 +722,24 @@ def test_help_page_describes_the_new_editing_flow(editor):
     assert "Ctrl+Alt+E" in text and "Undo" in text and "Appearance" in text
     assert "saved automatically" in text.lower()
     assert "Save layout" not in text
+
+
+# ---- review fixes ------------------------------------------------------------
+def test_rename_dialog_rejects_names_with_no_legal_characters(editor):
+    dlg = settings_ui.RenameLayoutDialog(editor, "Test saved layout")
+    ok = dlg.buttons.button(settings_ui.QDialogButtonBox.StandardButton.Ok)
+    dlg.name.setText("???")
+    assert not ok.isEnabled() and dlg.hint.text()
+
+
+def test_record_input_binds_the_selected_pad_not_the_current_row(editor):
+    _show_keys_page(editor)
+    editor.table.selectRow(0)
+    QTest.mouseClick(editor.table.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, _row_centre(editor, 2))
+    QTest.mouseClick(editor.table.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, _row_centre(editor, 2))
+    assert editor.selected_pads() == [0] and editor.table.currentRow() == 2
+    assert editor.btn_capture.isEnabled()
+    editor.btn_capture.setChecked(True)
+    editor.overlay.key_captured.emit(0x75)  # F6
+    assert editor.cfg["keys"][0].get("input") == "F6"
+    assert editor.cfg["keys"][2].get("input") != "F6"

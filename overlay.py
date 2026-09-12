@@ -375,8 +375,13 @@ def save_config(cfg):
     os.replace(tmp, CONFIG_PATH)
 
 
+def sanitise_layout_name(name):
+    """The file stem a layout name becomes: filename-illegal characters dropped, trimmed."""
+    return "".join(ch for ch in name if ch not in '\\/:*?"<>|').strip()
+
+
 def _profile_path(name):
-    safe = "".join(ch for ch in name if ch not in '\\/:*?"<>|').strip()
+    safe = sanitise_layout_name(name)
     if not safe:
         raise ValueError("invalid layout name")
     return os.path.join(PROFILE_DIR, safe + ".json")
@@ -412,8 +417,9 @@ def delete_profile(name):
 
 
 def layout_name_key(name):
-    """What makes two layout names the same: the sanitised file stem, case-folded."""
-    return os.path.splitext(os.path.basename(_profile_path(name)))[0].casefold()
+    """What makes two layout names the same: the sanitised file stem, case-folded.
+    Empty when nothing legal is left, so such a name is never "taken"."""
+    return sanitise_layout_name(name).casefold()
 
 
 def layout_name_taken(name, exclude=None):
@@ -425,7 +431,7 @@ def layout_name_taken(name, exclude=None):
 
 def unique_layout_name(name):
     """`name`, or `name (2)`, `name (3)`, ... until it is free."""
-    base = "".join(ch for ch in name if ch not in '\\/:*?"<>|').strip() or name
+    base = sanitise_layout_name(name) or name
     if not layout_name_taken(base):
         return base
     n = 2
@@ -714,9 +720,13 @@ class Overlay(QWidget):
         if not self.edit_mode:
             self.setWindowOpacity(cfg.get("opacity", 0.85))
         w, h = self.extent()
-        cfg["x"], cfg["y"] = visible_position(cfg["x"], cfg["y"], int(w), int(h), screen_rects())
+        pulled = visible_position(cfg["x"], cfg["y"], int(w), int(h), screen_rects())
+        moved = pulled != (cfg["x"], cfg["y"])
+        cfg["x"], cfg["y"] = pulled
         self.setGeometry(cfg["x"], cfg["y"], int(w), int(h))
         self.update()
+        if moved:
+            self.config_changed.emit()  # settings shows the pulled-back position, not the typed one
 
     def cell_rect(self, col, row, w=1, h=1):
         x0 = col * (self.cw + self.gap) + 2
@@ -1293,7 +1303,7 @@ def visible_position(x, y, w, h, screens, margin=VISIBLE_MARGIN):
     return x, y
 
 
-def pads_in_lines(keys, selected, axis):
+def pads_in_row_or_column(keys, selected, axis):
     """Indices of every pad in the row ("row") or column ("col") of each selected pad.
     A pad belongs to a selected pad's line when its centre on that axis lies within
     the selected pad's span there, so staggered keyboard keys are not caught by a

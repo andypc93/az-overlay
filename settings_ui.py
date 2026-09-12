@@ -17,7 +17,8 @@ from PySide6.QtWidgets import (
 import templates
 from gamepad import is_gamepad_input
 from overlay import (APP_NAME, DEFAULT_COLORS, GAMEPAD_LABELS, PAD_STYLES, PROFILE_KEYS, STICK_STYLES, delete_profile,
-                     create_profile, layout_name_taken, pads_in_lines, rename_profile, seed_default_layouts,
+                     create_profile, layout_name_taken, pads_in_row_or_column, rename_profile, sanitise_layout_name,
+                     seed_default_layouts,
                      KEY_TEXT_FLAGS, draw_pad, fit_key_font, key_text_rect,
                      label_for_token, list_profiles, load_profile, migrate, pad_inputs, parse_input,
                      save_config, save_profile, vks_for_label)
@@ -695,6 +696,9 @@ class RenameLayoutDialog(QDialog):
         if not text:
             ok.setEnabled(False)
             self.hint.setText("Type a name.")
+        elif not sanitise_layout_name(text):
+            ok.setEnabled(False)
+            self.hint.setText("Use at least one letter or number.")
         elif layout_name_taken(text, exclude=self.current):
             ok.setEnabled(False)
             self.hint.setText(f"A layout named '{text}' already exists.")
@@ -821,7 +825,7 @@ class SettingsWindow(QWidget):
         b_dup.clicked.connect(self._profile_duplicate)
         self.btn_delete_layout = QPushButton("Delete")
         self.btn_delete_layout.setObjectName("quiet")
-        self.btn_delete_layout.setToolTip("Delete this layout and switch to the next one")
+        self.btn_delete_layout.setToolTip("Delete this layout and switch to the first remaining one")
         self.btn_delete_layout.clicked.connect(self._profile_delete)
         self.delete_layout_action = self.btn_delete_layout  # older callers
         b_tpl = QPushButton("+ New layout")
@@ -906,8 +910,8 @@ class SettingsWindow(QWidget):
             self.btn_capture.setChecked(False)
 
     def _rebuild_tabs(self):
+        """Recreate every widget from cfg (after loading a layout)."""
         self._discard_undo()
-        """Recreate every widget from cfg (after loading a profile)."""
         idx = self.stack.currentIndex()
         self.btn_move.setChecked(False)
         self.btn_capture.setChecked(False)
@@ -1038,10 +1042,10 @@ class SettingsWindow(QWidget):
         bar.addWidget(btn_del)
         self.btn_delete_row = QPushButton("Delete row")
         self.btn_delete_row.setToolTip("Delete every pad in the row of each selected pad. Sticks stay.")
-        self.btn_delete_row.clicked.connect(lambda: self._delete_lines("row"))
+        self.btn_delete_row.clicked.connect(lambda: self._delete_row_or_column("row"))
         self.btn_delete_column = QPushButton("Delete column")
         self.btn_delete_column.setToolTip("Delete every pad in the column of each selected pad. Sticks stay.")
-        self.btn_delete_column.clicked.connect(lambda: self._delete_lines("col"))
+        self.btn_delete_column.clicked.connect(lambda: self._delete_row_or_column("col"))
         bar.addWidget(self.btn_delete_row)
         bar.addWidget(self.btn_delete_column)
         self.btn_clear_selection = QPushButton("Clear")
@@ -1483,7 +1487,7 @@ class SettingsWindow(QWidget):
             self.chk_visible.setChecked(True)
 
     def _sync_from_overlay(self):
-        self._discard_undo()
+        self._discard_undo()  # a drag, resize, or rebind on the overlay is an edit like any other
         self._loading = True
         self.sp_x.setValue(self.cfg["x"])
         self.sp_y.setValue(self.cfg["y"])
@@ -1684,8 +1688,8 @@ class SettingsWindow(QWidget):
     def _remove_pad(self):
         self._delete_pads(self.selected_pads())
 
-    def _delete_lines(self, axis):
-        self._delete_pads(pads_in_lines(self.cfg["keys"], self.selected_pads(), axis))
+    def _delete_row_or_column(self, axis):
+        self._delete_pads(pads_in_row_or_column(self.cfg["keys"], self.selected_pads(), axis))
 
     def _delete_pads(self, indices):
         """Remove these pads; every other pad keeps its coordinates. Undoable once."""
@@ -1711,10 +1715,15 @@ class SettingsWindow(QWidget):
         self._apply()  # discards the undo
         self._set_selected_pads([r for r, _pad in restored])
 
+    def _capture_target(self):
+        """Index of the pad Record input binds: the single selected pad, else None."""
+        rows = self.selected_pads()
+        return rows[0] if len(rows) == 1 else None
+
     def _toggle_capture(self, on):
-        if on and self.table.currentRow() < 0:
+        if on and self._capture_target() is None:
             self.btn_capture.setChecked(False)
-            self._show_error("Select a pad row first")
+            self._show_error("Select one pad first")
             return
         self.overlay.capturing = on
         self.btn_capture.setText("Cancel recording" if on else "Record input")
@@ -1725,9 +1734,9 @@ class SettingsWindow(QWidget):
 
     def _on_key_captured(self, token):
         self.btn_capture.setChecked(False)
-        r = self.table.currentRow()
+        r = self._capture_target()
         name = token if is_gamepad_input(token) else label_for_token(token)
-        if name is None or r < 0:
+        if name is None or r is None:
             self._show_error(f"Unknown key ({token})")
             return
         k = self.cfg["keys"][r]
@@ -1909,8 +1918,13 @@ class SettingsWindow(QWidget):
             return
         self.save_timer.stop()  # a pending autosave must not resurrect the file
         delete_profile(name)
+        self.cfg["profile"] = ""  # until another layout is loaded, nothing may be written under the old name
         if not list_profiles():
             seed_default_layouts()
+        for candidate in list_profiles():
+            if self._load_layout(candidate):
+                return
+        seed_default_layouts()  # every remaining file was unreadable: fall back to the bundled default
         self._load_layout(list_profiles()[0])
 
     def _load_layout(self, name):
@@ -1920,7 +1934,7 @@ class SettingsWindow(QWidget):
         except (OSError, ValueError) as e:
             self._refresh_profiles()
             self._show_error(f"Could not load: {e}")
-            return
+            return False
         for k in PROFILE_KEYS:
             self.cfg.pop(k, None)
             if k in data:
@@ -1930,6 +1944,7 @@ class SettingsWindow(QWidget):
         self._rebuild_tabs()
         self._apply()
         self._save_now()
+        return True
 
     # ---- save ---------------------------------------------------------
     def _schedule_save(self):

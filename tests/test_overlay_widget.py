@@ -143,3 +143,13 @@ def test_overlay_half_off_an_edge_stays_put(window, one_screen, pos):
     window.cfg["x"], window.cfg["y"] = pos
     window.apply()
     assert (window.cfg["x"], window.cfg["y"]) == pos and (window.x(), window.y()) == pos
+
+
+def test_pull_back_tells_settings_the_position_changed(window, one_screen):
+    changed = []
+    window.config_changed.connect(lambda: changed.append((window.cfg["x"], window.cfg["y"])))
+    window.cfg["x"], window.cfg["y"] = -5000, 200
+    window.apply()
+    assert changed == [(40 - window.width(), 200)]
+    window.apply()  # already visible: nothing to report
+    assert len(changed) == 1
