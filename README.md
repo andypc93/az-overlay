@@ -89,9 +89,12 @@ dragging a box on the layout selects everything inside it. The table supports
 Ctrl-click, Shift-click, and Ctrl+A (visible pads only, so search then Ctrl+A
 picks exactly what you searched for). A toolbar above the search field shows
 what you can do with the selection: **Remove** (or the Delete key) removes
-every selected pad. **Add row** adds blank pads below the layout; **Add column**
-adds them to the right. Both reveal the layout automatically so you can select
-and assign the new pads.
+every selected pad, **Delete row** and **Delete column** remove the whole row or
+column each selected pad sits in (sticks stay). Nothing else moves, and there is
+no confirmation: an **Undo delete** bar (or Ctrl+Z) puts the last deletion back.
+**Add row** adds blank pads below the layout; **Add column** adds them to the
+right. Both reveal the layout automatically so you can select and assign the new
+pads.
 
 ### 4. Set the style
 

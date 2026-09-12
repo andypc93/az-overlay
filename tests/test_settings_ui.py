@@ -602,3 +602,66 @@ def test_delete_row_and_column_buttons_follow_the_selection(editor):
     assert not editor.btn_delete_row.isEnabled() and not editor.btn_delete_column.isEnabled()
     editor.table.selectRow(0)
     assert editor.btn_delete_row.isEnabled() and editor.btn_delete_column.isEnabled()
+
+
+# ---- ticket 14: undo delete ---------------------------------------------------
+def test_undo_restores_removed_pads_at_their_original_places(editor):
+    _show_keys_page(editor)
+    original = [dict(k) for k in editor.cfg["keys"]]
+    editor.table.selectRow(1)
+    QTest.mouseClick(editor.table.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, _row_centre(editor, 3))
+    editor.btn_remove_pad.click()
+    assert editor.undo_bar.isVisible() and editor.btn_undo.text() == "Undo delete · 2 pads"
+    editor.btn_undo.click()
+    assert editor.cfg["keys"] == original
+    assert editor.table.rowCount() == len(original)
+    assert not editor.undo_bar.isVisible()
+    editor.btn_undo.click()  # single level: nothing left to undo
+    assert editor.cfg["keys"] == original
+
+
+def test_undo_covers_row_column_and_delete_key(editor):
+    _show_keys_page(editor)
+    original = [dict(k) for k in editor.cfg["keys"]]
+    editor.table.selectRow(0)
+    editor.btn_delete_column.click()
+    assert editor.undo_bar.isVisible() and len(editor.cfg["keys"]) < len(original)
+    editor.btn_undo.click()
+    assert editor.cfg["keys"] == original
+    editor.table.selectRow(0)
+    editor.btn_delete_row.click()
+    assert editor.undo_bar.isVisible()
+    editor.btn_undo.click()
+    assert editor.cfg["keys"] == original
+    editor.table.clearSelection()  # undo re-selects the restored pads
+    editor.table.selectRow(2)
+    QTest.keyClick(editor.table, Qt.Key.Key_Delete)
+    assert editor.btn_undo.text() == "Undo delete · 1 pad"
+    editor.btn_undo.click()
+    assert editor.cfg["keys"] == original
+
+
+def test_ctrl_z_undoes_unless_recording(editor):
+    _show_keys_page(editor)
+    original = [dict(k) for k in editor.cfg["keys"]]
+    editor.table.selectRow(0)
+    editor.btn_remove_pad.click()
+    editor.table.selectRow(0)
+    editor.btn_capture.setChecked(True)
+    QTest.keyClick(editor, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert len(editor.cfg["keys"]) == len(original) - 1
+    editor.btn_capture.setChecked(False)
+    QTest.keyClick(editor, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert editor.cfg["keys"] == original
+
+
+def test_a_non_delete_edit_discards_the_undo(editor):
+    _show_keys_page(editor)
+    n = len(editor.cfg["keys"])
+    editor.table.selectRow(0)
+    editor.btn_remove_pad.click()
+    assert editor.undo_bar.isVisible()
+    editor.sp_x.setValue(editor.sp_x.value() + 5)
+    assert not editor.undo_bar.isVisible()
+    QTest.keyClick(editor, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert len(editor.cfg["keys"]) == n - 1

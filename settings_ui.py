@@ -5,7 +5,7 @@ import tempfile
 from math import ceil
 
 from PySide6.QtCore import QEvent, QItemSelectionModel, QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QUrl, QUrlQuery, Property, Signal
-from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QKeySequence, QLinearGradient, QPainter, QPalette, QPen, QPixmap, QPolygonF
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QKeySequence, QLinearGradient, QPainter, QPalette, QPen, QPixmap, QPolygonF, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QAbstractSpinBox, QBoxLayout, QCheckBox, QColorDialog, QComboBox, QDialog,
     QDialogButtonBox, QDoubleSpinBox, QFontComboBox, QFormLayout, QFrame, QGridLayout,
@@ -879,6 +879,7 @@ class SettingsWindow(QWidget):
             self.btn_capture.setChecked(False)
 
     def _rebuild_tabs(self):
+        self._discard_undo()
         """Recreate every widget from cfg (after loading a profile)."""
         idx = self.stack.currentIndex()
         self.btn_move.setChecked(False)
@@ -1055,6 +1056,21 @@ class SettingsWindow(QWidget):
         l1.addWidget(self.table)
         self.no_keys = muted("No matching pads. Try another search or add a pad.")
         l1.addWidget(self.no_keys)
+        # Undo bar: appears after a delete, gone after the next non-delete edit.
+        self.undo_bar = QWidget()
+        self.undo_bar.setObjectName("inline")
+        undo_row = QHBoxLayout(self.undo_bar)
+        undo_row.setContentsMargins(6, 4, 12, 4)
+        self.btn_undo = QPushButton("Undo delete")
+        self.btn_undo.setToolTip("Put the deleted pads back where they were.")
+        self.btn_undo.clicked.connect(self._undo_delete)
+        undo_row.addWidget(self.btn_undo)
+        undo_row.addWidget(muted("Ctrl+Z"))
+        undo_row.addStretch(1)
+        self.undo_bar.hide()
+        l1.addWidget(self.undo_bar)
+        self._undo = None  # [(index, pad), ...] of the last delete, oldest index first
+        QShortcut(QKeySequence.StandardKey.Undo, self, self._undo_delete)
         row = QHBoxLayout()
         self.btn_capture = QPushButton("Record input")
         self.btn_capture.setObjectName("primary")
@@ -1365,12 +1381,19 @@ class SettingsWindow(QWidget):
             self._save_now()
         e.accept()
 
-    def _apply(self):
+    def _apply(self, keep_undo=False):
         self.overlay.apply()
         self.pad_layout.update()
         if hasattr(self, "preview"):
             self.preview.update()
+        if not keep_undo:
+            self._discard_undo()
         self._schedule_save()
+
+    def _discard_undo(self):
+        self._undo = None
+        if hasattr(self, "undo_bar"):
+            self.undo_bar.hide()
 
     def _set(self, key, val):
         if self._loading:
@@ -1414,6 +1437,7 @@ class SettingsWindow(QWidget):
             self.chk_visible.setChecked(True)
 
     def _sync_from_overlay(self):
+        self._discard_undo()
         self._loading = True
         self.sp_x.setValue(self.cfg["x"])
         self.sp_y.setValue(self.cfg["y"])
@@ -1618,14 +1642,28 @@ class SettingsWindow(QWidget):
         self._delete_pads(pads_in_lines(self.cfg["keys"], self.selected_pads(), axis))
 
     def _delete_pads(self, indices):
-        """Remove these pads; every other pad keeps its coordinates."""
+        """Remove these pads; every other pad keeps its coordinates. Undoable once."""
         rows = sorted(set(indices))
         if not rows:
             return
+        self._undo = [(r, self.cfg["keys"][r]) for r in rows]
         for r in reversed(rows):
             del self.cfg["keys"][r]
         self._fill_table()
-        self._apply()
+        self._apply(keep_undo=True)
+        n = len(rows)
+        self.btn_undo.setText(f"Undo delete · {n} pad{'s' if n != 1 else ''}")
+        self.undo_bar.show()
+
+    def _undo_delete(self):
+        if self._undo is None or self.btn_capture.isChecked():
+            return
+        restored = self._undo
+        for r, pad in restored:  # ascending: each insert lands at its original index
+            self.cfg["keys"].insert(r, pad)
+        self._fill_table()
+        self._apply()  # discards the undo
+        self._set_selected_pads([r for r, _pad in restored])
 
     def _toggle_capture(self, on):
         if on and self.table.currentRow() < 0:
