@@ -78,3 +78,46 @@ def test_click_without_drag_starts_capture_and_keeps_position(window):
     assert window.capturing
     assert window.capture_pad is pad
     assert (window.x(), window.y()) == (300, 300)
+
+
+def _hotkey(ov, key):
+    ov.pressed = set(overlay.CTRL_VKS) | set(overlay.ALT_VKS)
+    ov.check_hotkeys(ord(key))
+    ov.pressed = set()
+    QTest.qWait(50)
+
+
+def test_edit_hotkey_shows_the_overlay_and_toggles_edit_mode(window):
+    window.set_edit_mode(False)
+    window.hide()
+    states = []
+    window.edit_mode_changed.connect(states.append)
+    _hotkey(window, "E")
+    assert window.isVisible() and window.edit_mode
+    _hotkey(window, "E")
+    assert not window.edit_mode
+    assert states == [True, False]
+
+
+def test_escape_ends_edit_mode(window):
+    assert window.edit_mode
+    QTest.keyClick(window, Qt.Key.Key_Escape)
+    QTest.qWait(50)
+    assert not window.edit_mode
+
+
+def test_tray_edit_action_mirrors_edit_mode(window):
+    window.set_edit_mode(False)
+    menu = overlay.tray_menu(window, lambda: None)
+    action = next(a for a in menu.actions() if a.text() == "Edit on screen")
+    assert action.isCheckable() and not action.isChecked()
+    action.trigger()
+    QTest.qWait(50)
+    assert window.edit_mode and action.isChecked()
+    window.set_edit_mode(False)
+    assert not action.isChecked()
+
+
+def test_edit_hint_names_hotkey_and_escape(window):
+    hint = window.edit_hint()
+    assert "Ctrl+Alt+E" in hint and "Esc" in hint

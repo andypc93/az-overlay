@@ -708,6 +708,7 @@ class SettingsWindow(QWidget):
         self.nav.setCurrentRow(0)
 
         overlay.config_changed.connect(self._sync_from_overlay)
+        overlay.edit_mode_changed.connect(self._edit_mode_changed)
         overlay.key_captured.connect(self._on_key_captured)
         # Switching to another app (the game) ends on-screen editing. Otherwise the
         # overlay stays clickable and scroll-resizable and game input drags/resizes it.
@@ -918,12 +919,15 @@ class SettingsWindow(QWidget):
         l3.addWidget(section("Hotkeys"))
         l3.addWidget(muted("Always pressed together with Ctrl + Alt."))
         f3 = form()
-        for name, text in (("toggle", "Show / hide"), ("settings", "Open settings"), ("quit", "Quit")):
+        self.hotkey_edits = {}
+        for name, text in (("toggle", "Show / hide"), ("settings", "Open settings"),
+                           ("edit", "Edit on screen"), ("quit", "Quit")):
             le = QLineEdit(self.cfg["hotkeys"].get(name, ""))
             le.setFixedWidth(90)
             le.setAlignment(Qt.AlignmentFlag.AlignCenter)
             le.editingFinished.connect(lambda le=le, n=name: self._hotkey(n, le))
             f3.addRow(text, le)
+            self.hotkey_edits[name] = le
         l3.addLayout(f3)
         return self._page("Layout", "Get your overlay in the right place, at the right size.", c1,
                           disclosure("Key dimensions", c2), disclosure("Keyboard shortcuts", c3))
@@ -1325,6 +1329,11 @@ class SettingsWindow(QWidget):
             return
         self.cfg["hotkeys"][name] = le.text().strip()
         self._apply()
+
+    def _edit_mode_changed(self, on):
+        """The overlay entered or left edit mode by hotkey, tray, Esc, or focus loss: mirror it."""
+        if self.btn_move.isChecked() != on:
+            self.btn_move.setChecked(on)
 
     def _toggle_move(self, on):
         self.overlay.set_edit_mode(on)

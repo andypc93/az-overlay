@@ -14,6 +14,11 @@ def test_config_theme_default_and_validation(theme, tmp_path, monkeypatch):
     assert overlay.load_config()["theme"] == ("light" if theme == "light" else "dark")
 
 
+def test_config_defaults_the_edit_hotkey(tmp_path, monkeypatch):
+    cfg = overlay.load_config()
+    assert cfg["hotkeys"]["edit"] == "E"
+
+
 def test_letters_and_digits_map_to_vk():
     assert overlay.vks_for_label("Q") == {0x51}
     assert overlay.vks_for_label("9") == {0x39}

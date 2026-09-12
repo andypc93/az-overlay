@@ -16,6 +16,7 @@ import settings_ui
 class PreviewOverlay(QWidget):
     config_changed = Signal()
     key_captured = Signal(object)
+    edit_mode_changed = Signal(bool)
 
     def __init__(self):
         super().__init__()
@@ -419,3 +420,16 @@ def test_switching_to_another_app_ends_on_screen_editing(editor):
 
     assert calls == [True, False]
     assert not editor.btn_move.isChecked()
+
+
+def test_keyboard_shortcuts_card_has_the_edit_hotkey(editor):
+    assert editor.hotkey_edits["edit"].text() == "E"
+
+
+def test_edit_mode_started_elsewhere_flips_the_layout_button(editor):
+    calls = []
+    editor.overlay.set_edit_mode = calls.append
+    editor.overlay.edit_mode_changed.emit(True)
+    assert editor.btn_move.isChecked() and editor.btn_move.text() == "Done editing"
+    editor.overlay.edit_mode_changed.emit(False)
+    assert not editor.btn_move.isChecked() and editor.btn_move.text() == "Edit on screen"

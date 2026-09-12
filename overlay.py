@@ -9,7 +9,7 @@ A tray icon opens the Settings window (see settings_ui.py) where layout, keys,
 colors, position and scale are edited live and saved to config.json.
 
 Hotkeys: Ctrl+Alt+O toggles visibility, Ctrl+Alt+S opens settings,
-Ctrl+Alt+Q quits (editable in config).
+Ctrl+Alt+E toggles Edit on screen, Ctrl+Alt+Q quits (editable in config).
 """
 
 import ctypes
@@ -341,6 +341,7 @@ def load_config():
     cfg["hotkeys"].setdefault("toggle", "O")
     cfg["hotkeys"].setdefault("settings", "S")
     cfg["hotkeys"].setdefault("quit", "Q")
+    cfg["hotkeys"].setdefault("edit", "E")
     if not list_profiles():
         if stale.get("keys"):
             migrate(stale)
@@ -633,6 +634,7 @@ class Overlay(QWidget):
     SCALE_MIN, SCALE_MAX = 0.2, 3.0
 
     config_changed = Signal()  # emitted when the overlay itself edits cfg (drag / wheel / rebind)
+    edit_mode_changed = Signal(bool)  # edit mode entered / left, by button, tray, hotkey, Esc, or focus loss
     key_captured = Signal(object)  # token of the next input pressed while capturing
     open_settings = Signal()
 
@@ -708,7 +710,7 @@ class Overlay(QWidget):
         self.layout_stick_labels()
 
         self.hotkeys = {name: vks_for_label(cfg["hotkeys"].get(name, ""))
-                        for name in ("toggle", "quit", "settings")}
+                        for name in ("toggle", "quit", "settings", "edit")}
         if not self.edit_mode:
             self.setWindowOpacity(cfg.get("opacity", 0.85))
         w, h = self.extent()
@@ -1013,8 +1015,7 @@ class Overlay(QWidget):
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(frame, 2, Qt.PenStyle.DashLine))
             p.drawRect(self.rect().adjusted(1, 1, -2, -2))
-            hint = ("drag: move  ·  wheel: resize  ·  click a key, then press its button: rebind  "
-                    "·  right-click: clear")
+            hint = self.edit_hint()
             p.setFont(QFont("Segoe UI", 9))
             flags = Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap
             avail = QRectF(6, 8, self.width() - 12, self.height() - 12)
@@ -1028,6 +1029,25 @@ class Overlay(QWidget):
         p.end()
 
     # ---- edit mode: drag to move, wheel to scale, click to rebind -------
+    def edit_hint(self):
+        key = self.cfg.get("hotkeys", {}).get("edit", "E")
+        return (f"drag: move  ·  wheel: resize  ·  click a key, then press its button: rebind  "
+                f"·  right-click: clear  ·  done: Ctrl+Alt+{key} or Esc")
+
+    def toggle_edit_mode(self):
+        """Hotkey / tray entry point: enter edit mode (showing the overlay first) or leave it."""
+        if self.edit_mode:
+            self.set_edit_mode(False)
+        else:
+            self.show()
+            self.set_edit_mode(True)
+
+    def keyPressEvent(self, e):
+        if self.edit_mode and e.key() == Qt.Key.Key_Escape:
+            self.set_edit_mode(False)
+            return
+        super().keyPressEvent(e)
+
     def set_edit_mode(self, on):
         if on == self.edit_mode:
             return
@@ -1045,6 +1065,7 @@ class Overlay(QWidget):
             self.show()
         self.setCursor(Qt.CursorShape.SizeAllCursor if on else Qt.CursorShape.ArrowCursor)
         self.update()
+        self.edit_mode_changed.emit(on)
 
     def pad_at(self, pos):
         for pad in self.pads:
@@ -1233,11 +1254,35 @@ class Overlay(QWidget):
             self.setVisible(not self.isVisible())
         elif vk in self.hotkeys["settings"]:
             self.open_settings.emit()
+        elif vk in self.hotkeys["edit"]:
+            self.toggle_edit_mode()
 
     def shutdown(self):
         self.listener.stop()
         self.mouse_listener.stop()
         QApplication.quit()
+
+
+def tray_menu(overlay, open_settings):
+    """Tray context menu. The "Edit on screen" item mirrors the overlay's edit mode."""
+    menu = QMenu()
+    act_settings = QAction("Settings…", menu)
+    act_settings.triggered.connect(open_settings)
+    act_toggle = QAction("Show / hide overlay", menu)
+    act_toggle.triggered.connect(lambda: overlay.setVisible(not overlay.isVisible()))
+    act_edit = QAction("Edit on screen", menu)
+    act_edit.setCheckable(True)
+    act_edit.setChecked(overlay.edit_mode)
+    act_edit.triggered.connect(lambda _checked: overlay.toggle_edit_mode())
+    overlay.edit_mode_changed.connect(act_edit.setChecked)
+    act_quit = QAction("Quit", menu)
+    act_quit.triggered.connect(overlay.shutdown)
+    menu.addAction(act_settings)
+    menu.addAction(act_toggle)
+    menu.addAction(act_edit)
+    menu.addSeparator()
+    menu.addAction(act_quit)
+    return menu
 
 
 def app_icon(color="#c9d400"):
@@ -1285,18 +1330,7 @@ def main():
 
     tray = QSystemTrayIcon(icon)
     tray.setToolTip(f"{APP_NAME} — right-click for settings")
-    menu = QMenu()
-    act_settings = QAction("Settings…", menu)
-    act_settings.triggered.connect(settings.present)
-    act_toggle = QAction("Show / hide overlay", menu)
-    act_toggle.triggered.connect(lambda: overlay.setVisible(not overlay.isVisible()))
-    act_quit = QAction("Quit", menu)
-    act_quit.triggered.connect(overlay.shutdown)
-    menu.addAction(act_settings)
-    menu.addAction(act_toggle)
-    menu.addSeparator()
-    menu.addAction(act_quit)
-    tray.setContextMenu(menu)
+    tray.setContextMenu(tray_menu(overlay, settings.present))
     tray.activated.connect(lambda r: settings.present() if r == QSystemTrayIcon.ActivationReason.DoubleClick else None)
     tray.show()
     tray.showMessage(f"{APP_NAME} running", "Double-click the tray icon or press Ctrl+Alt+S for settings.",

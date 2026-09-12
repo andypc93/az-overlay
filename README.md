@@ -140,6 +140,7 @@ unbound, so record an input for them on **Keys**.
 | :--- | :--- |
 | **Ctrl + Alt + O** | Show or hide the overlay |
 | **Ctrl + Alt + S** | Open settings |
+| **Ctrl + Alt + E** | Edit on screen (drag to move, scroll to resize); Esc or the same key ends it |
 | **Ctrl + Alt + Q** | Quit |
 
 Change the final key under **Layout → Keyboard shortcuts**. The **Ctrl + Alt**
