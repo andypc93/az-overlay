@@ -5,6 +5,7 @@ so templates use one vocabulary:
 
   buttons: a b x y back guide start leftstick rightstick leftshoulder
            rightshoulder dpup dpdown dpleft dpright misc1 touchpad
+           paddle1 paddle2 paddle3 paddle4
   axes:    leftx lefty rightx righty lefttrigger righttrigger   (-1..1 / 0..1)
 
 Input ids used in profiles are "gp:<name>". Everything degrades gracefully:
@@ -34,6 +35,8 @@ BUTTONS = {
     "dpup": "CONTROLLER_BUTTON_DPAD_UP", "dpdown": "CONTROLLER_BUTTON_DPAD_DOWN",
     "dpleft": "CONTROLLER_BUTTON_DPAD_LEFT", "dpright": "CONTROLLER_BUTTON_DPAD_RIGHT",
     "misc1": "CONTROLLER_BUTTON_MISC1", "touchpad": "CONTROLLER_BUTTON_TOUCHPAD",
+    "paddle1": "CONTROLLER_BUTTON_PADDLE1", "paddle2": "CONTROLLER_BUTTON_PADDLE2",
+    "paddle3": "CONTROLLER_BUTTON_PADDLE3", "paddle4": "CONTROLLER_BUTTON_PADDLE4",
 }
 AXES = {
     "leftx": "CONTROLLER_AXIS_LEFTX", "lefty": "CONTROLLER_AXIS_LEFTY",

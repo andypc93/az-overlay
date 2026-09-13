@@ -264,3 +264,11 @@ def test_azeron_models_listed_and_build():
             overlay.pad_inputs(k)
     assert templates.suggested_name("Azeron", "Keyzen") == "Azeron Keyzen"
     assert len(templates.build("Azeron", "Cyborg II")["keys"]) == 30
+
+
+def test_elite_paddles_are_controller_inputs():
+    import gamepad
+    for n in range(1, 5):
+        assert overlay.input_matches(overlay.parse_input(f"gp:paddle{n}"), {f"gp:paddle{n}"})
+        assert overlay.GAMEPAD_LABELS[f"gp:paddle{n}"] == f"P{n}"
+        assert gamepad.BUTTONS[f"paddle{n}"] == f"CONTROLLER_BUTTON_PADDLE{n}"

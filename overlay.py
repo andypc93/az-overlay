@@ -143,6 +143,7 @@ GAMEPAD_LABELS = {
     "gp:rightshoulder": "RB", "gp:dpup": "▲", "gp:dpdown": "▼", "gp:dpleft": "◀",
     "gp:dpright": "▶", "gp:misc1": "Share", "gp:touchpad": "Touchpad",
     "gp:lefttrigger": "LT", "gp:righttrigger": "RT",
+    "gp:paddle1": "P1", "gp:paddle2": "P2", "gp:paddle3": "P3", "gp:paddle4": "P4",
 }
 
 
