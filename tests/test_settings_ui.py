@@ -743,3 +743,56 @@ def test_record_input_binds_the_selected_pad_not_the_current_row(editor):
     editor.overlay.key_captured.emit(0x75)  # F6
     assert editor.cfg["keys"][0].get("input") == "F6"
     assert editor.cfg["keys"][2].get("input") != "F6"
+
+
+# ---- color picker ---------------------------------------------------------
+def test_color_picker_hex_entry_updates_the_color(editor):
+    dlg = settings_ui.ColorPickerDialog(editor, editor.cfg, "pressed_fill")
+    seen = []
+    dlg.color_changed.connect(lambda c: seen.append(c.name()))
+    dlg.hex.setText("#00ff00")
+    assert dlg.color().name() == "#00ff00" and seen[-1] == "#00ff00"
+    dlg.hex.setText("nope")
+    assert dlg.color().name() == "#00ff00"  # invalid text leaves the color alone
+
+
+def test_color_picker_swatches_include_the_app_accent_and_layout_colors(editor):
+    dlg = settings_ui.ColorPickerDialog(editor, editor.cfg, "pressed_fill")
+    names = [b.property("color") for b in dlg.findChildren(settings_ui.QPushButton) if b.property("color")]
+    assert "#b6ff00" in names and editor.cfg["colors"]["idle_outline"] in names
+    swatch = next(b for b in dlg.findChildren(settings_ui.QPushButton) if b.property("color") == "#b6ff00")
+    swatch.click()
+    assert dlg.color().name() == "#b6ff00" and dlg.hex.text() == "#b6ff00"
+
+
+def test_color_picker_square_and_hue_bar_pick_colors(editor):
+    dlg = settings_ui.ColorPickerDialog(editor, editor.cfg, "pressed_fill")
+    dlg.show()
+    QTest.qWait(50)
+    sq = dlg.square
+    QTest.mouseClick(sq, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(sq.width() - 1, 0))
+    top_right = dlg.color()
+    assert top_right.saturation() >= 250 and top_right.value() >= 250
+    QTest.mouseClick(sq, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(0, sq.height() - 1))
+    assert dlg.color().value() <= 5
+    bar = dlg.hue_bar
+    QTest.mouseClick(bar, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(bar.width() // 2, bar.height() // 3))
+    QTest.mouseClick(sq, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(sq.width() - 1, 0))
+    assert 100 <= dlg.color().hue() <= 140  # a third of the way round the wheel is green
+
+
+def test_color_button_uses_the_app_picker_and_cancel_restores(editor, monkeypatch):
+    button = editor.color_buttons[0]
+    start = editor.cfg["colors"][button.key]
+
+    def run(dlg):
+        dlg.hex.setText("#123456")
+        return settings_ui.QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(settings_ui.ColorPickerDialog, "exec", run)
+    button.pick()
+    assert editor.cfg["colors"][button.key] == start
+
+    monkeypatch.setattr(settings_ui.ColorPickerDialog, "exec", lambda dlg: (dlg.hex.setText("#123456"), settings_ui.QDialog.DialogCode.Accepted)[1])
+    button.pick()
+    assert editor.cfg["colors"][button.key] == "#123456"

@@ -60,6 +60,8 @@ overlay can sit partly off-screen, but never entirely off: it is pulled back int
 view if it ever would be. Use the **Size** and **Opacity** sliders for quick
 adjustments. Expand **Precise position & scale**, **Key dimensions**, or
 **Keyboard shortcuts** when you need finer control.
+**Opacity** applies to idle pads only: a pressed pad is always drawn solid, so
+it stays bright however faint you keep the overlay at rest.
 
 While editing on screen, click a pad and press an input to rebind it.
 Right-click a pad to clear it.
@@ -108,6 +110,9 @@ pads.
 
 On **Appearance**, adjust the font, size, weight, and colors. The live preview
 shows idle and pressed states, each with its own fill, border, and text color.
+Colors open the app's own picker: a hue bar and saturation square, a hex field,
+swatches for the accent and the layout's other colors, and a live idle/pressed
+preview of the pad; the overlay follows while you pick.
 The size you pick is the maximum: long labels shrink automatically so text
 always stays inside its pad, including on round buttons.
 
@@ -180,7 +185,7 @@ your changes.
 | :--- | :--- |
 | `x`, `y` | Screen position |
 | `scale` | Overall size; `0.5` is half size |
-| `opacity` | Overlay opacity, from `0` to `1` |
+| `opacity` | Opacity of idle pads, from `0` to `1`; a pressed pad is always drawn solid |
 | `cell_w`, `cell_h`, `gap` | Base key dimensions and spacing |
 | `keys` | Labels, input bindings, positions, dimensions, and shapes |
 | `decor` | Silhouettes drawn behind the pads, such as a mouse body |

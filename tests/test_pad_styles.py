@@ -1,6 +1,8 @@
 """Pad (key / button) rendering styles."""
 
 import pytest
+from PySide6.QtCore import QRectF
+from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import QApplication
 
 import overlay
@@ -48,3 +50,42 @@ def test_settings_expose_pad_shape_and_style(editor):  # noqa: F811
     assert editor.cfg["pad_style"] == "keycap"
     editor.pad_shape_combo.setCurrentIndex(1)
     assert editor.cfg["shape"] == "circle"
+
+
+def _paint_pad(style, t, colors):
+    img = QImage(120, 90, QImage.Format.Format_ARGB32_Premultiplied)
+    img.fill(QColor("#203020"))
+    p = QPainter(img)
+    overlay.draw_pad(p, QRectF(0, 0, 120, 90), "rect", style, 8, {k: QColor(v) for k, v in colors.items()}, t)
+    p.end()
+    return img
+
+
+def _close(a, b, tol=10):
+    return all(abs(x - y) <= tol for x, y in zip(a.getRgb()[:3], b.getRgb()[:3]))
+
+
+def test_underline_pressed_tile_takes_the_pressed_fill():
+    colors = dict(overlay.DEFAULT_COLORS, pressed_fill="#ff0000", pressed_outline="#c9d400", pressed_text="#000000")
+    img = _paint_pad("underline", 1.0, colors)
+    assert _close(img.pixelColor(60, 40), QColor("#ff0000")), img.pixelColor(60, 40).name()
+    assert _close(img.pixelColor(60, 87), QColor("#c9d400")), img.pixelColor(60, 87).name()  # the bar still carries the outline color
+
+
+def test_pressed_pads_paint_solid_while_idle_pads_follow_opacity(window):  # noqa: F811
+    window.cfg["keys"] = [{"label": "A", "col": 0, "row": 0, "w": 1, "h": 1},
+                          {"label": "B", "col": 1, "row": 0, "w": 1, "h": 1}]
+    window.cfg["opacity"] = 0.35
+    window.cfg["pad_style"] = "classic"
+    window.set_edit_mode(False)
+    window.apply()
+    assert window.windowOpacity() == 1.0  # opacity is painted per pad, not applied to the window
+    keys = [p for p in window.pads if p.source and p.source[0] == "key"]
+    keys[0].level = 1.0
+    img = QImage(window.size(), QImage.Format.Format_ARGB32_Premultiplied)
+    img.fill(QColor(0, 0, 0, 0))
+    window.render(img)
+    pressed = img.pixelColor(keys[0].rect.center().toPoint())
+    idle = img.pixelColor(keys[1].rect.center().toPoint())
+    assert pressed.alpha() >= 250
+    assert abs(idle.alpha() - round(0.35 * 255)) <= 8

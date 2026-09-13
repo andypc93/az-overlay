@@ -5,7 +5,7 @@ import tempfile
 from math import ceil
 
 from PySide6.QtCore import QEvent, QItemSelectionModel, QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QUrl, QUrlQuery, Property, Signal
-from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QKeySequence, QLinearGradient, QPainter, QPalette, QPen, QPixmap, QPolygonF, QShortcut
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QImage, QKeySequence, QLinearGradient, QPainter, QPainterPath, QPalette, QPen, QPixmap, QPolygonF, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QAbstractSpinBox, QBoxLayout, QCheckBox, QColorDialog, QComboBox, QDialog,
     QDialogButtonBox, QDoubleSpinBox, QFontComboBox, QFormLayout, QFrame, QGridLayout,
@@ -374,6 +374,7 @@ def stepper(spin):
     return w
 
 
+
 class ColorButton(QPushButton):
     def __init__(self, cfg, key, on_change):
         super().__init__()
@@ -402,21 +403,11 @@ class ColorButton(QPushButton):
         self.setStyleSheet("font-family: Consolas, 'Segoe UI'; font-size: 9pt; font-weight: 400;")
 
     def pick(self):
-        dlg = QColorDialog(QColor(self.cfg["colors"][self.key]), self)
-        # The Windows native picker ignores the editor's palette and stylesheet.
-        dlg.setOption(QColorDialog.ColorDialogOption.DontUseNativeDialog, True)
-        dlg.setOption(QColorDialog.ColorDialogOption.ShowAlphaChannel, False)
-        theme = "light" if self.cfg.get("theme") == "light" else "dark"
-        dlg.setWindowTitle(f"Choose {self.key.replace('_', ' ')} color")
-        dlg.setPalette(theme_palette(theme))
-        buttons = dlg.findChild(QDialogButtonBox)
-        if buttons:
-            buttons.button(QDialogButtonBox.StandardButton.Ok).setObjectName("primary")
-        dlg.setStyleSheet(style(theme))
-        dlg.currentColorChanged.connect(self._live)
+        dlg = ColorPickerDialog(self.window(), self.cfg, self.key)
+        dlg.color_changed.connect(self._live)  # the overlay follows while you pick
         start = self.cfg["colors"][self.key]
-        if dlg.exec():
-            self._live(dlg.selectedColor())
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._live(dlg.color())
         else:
             self.cfg["colors"][self.key] = start
             self.refresh()
@@ -464,15 +455,254 @@ class PadPreview(QWidget):
         style = self.cfg.get("pad_style", "classic")
         for x, state in ((x0, "idle"), (x0 + w + gap, "pressed")):
             rect = QRectF(x, y0, w, h)
-            label_color = draw_pad(p, rect, shape, style, r, c, 1.0 if state == "pressed" else 0.0)
+            # The overlay paints idle pads at the chosen opacity and lit pads solid: show the same here.
+            # The idle sample is painted into an image first so its label does not compound over its tile.
+            dpr = self.devicePixelRatio()
+            sample = QImage(self.size() * dpr, QImage.Format.Format_ARGB32_Premultiplied)
+            sample.setDevicePixelRatio(dpr)
+            sample.fill(Qt.GlobalColor.transparent)
+            sp = QPainter(sample)
+            sp.setRenderHint(QPainter.RenderHint.Antialiasing)
+            label_color = draw_pad(sp, rect, shape, style, r, c, 1.0 if state == "pressed" else 0.0)
             text_rect = key_text_rect(rect, shape)
-            p.setFont(fit_key_font("Space", font, text_rect, self))
-            p.setPen(label_color)
-            p.drawText(text_rect, KEY_TEXT_FLAGS, "Space")
+            sp.setFont(fit_key_font("Space", font, text_rect, self))
+            sp.setPen(label_color)
+            sp.drawText(text_rect, KEY_TEXT_FLAGS, "Space")
+            sp.end()
+            p.setOpacity(1.0 if state == "pressed" else float(self.cfg.get("opacity", 0.85)))
+            p.drawImage(QPointF(0, 0), sample)
+            p.setOpacity(1.0)
             p.setFont(QFont("Segoe UI", 8))
             p.setPen(QColor(theme_colors(self.cfg)["muted"]))
             p.drawText(QRectF(x, y0 + h + 4, w, 16), Qt.AlignmentFlag.AlignCenter, state)
         p.end()
+
+
+# ---- color picker ---------------------------------------------------------------
+PRESET_COLORS = ("#b6ff00", "#c9d400", "#ffffff", "#000000", "#ff3b30", "#ff9500", "#ffd60a",
+                 "#34c759", "#00c7be", "#0a84ff", "#af52de", "#ff2d55")
+
+
+class SatValSquare(QWidget):
+    """Saturation left-to-right, value bottom-to-top, for one hue."""
+
+    picked = Signal(float, float)  # saturation, value in 0..1
+
+    def __init__(self):
+        super().__init__()
+        self.hue = 0.0
+        self.sat = 1.0
+        self.val = 1.0
+        self.setFixedSize(220, 160)
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.setAccessibleName("Saturation and value")
+
+    def set_hsv(self, hue, sat, val):
+        self.hue, self.sat, self.val = hue, sat, val
+        self.update()
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        path = QPainterPath()
+        path.addRoundedRect(r, 10, 10)
+        p.setClipPath(path)
+        white_to_hue = QLinearGradient(r.left(), 0, r.right(), 0)
+        white_to_hue.setColorAt(0, QColor("#ffffff"))
+        white_to_hue.setColorAt(1, QColor.fromHsvF(self.hue, 1.0, 1.0))
+        p.fillRect(r, white_to_hue)
+        to_black = QLinearGradient(0, r.top(), 0, r.bottom())
+        to_black.setColorAt(0, QColor(0, 0, 0, 0))
+        to_black.setColorAt(1, QColor("#000000"))
+        p.fillRect(r, to_black)
+        p.setClipping(False)
+        x = r.left() + self.sat * r.width()
+        y = r.top() + (1.0 - self.val) * r.height()
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor("#000000"), 3))
+        p.drawEllipse(QPointF(x, y), 7, 7)
+        p.setPen(QPen(QColor("#ffffff"), 1.5))
+        p.drawEllipse(QPointF(x, y), 7, 7)
+        p.end()
+
+    def _pick(self, pos):
+        self.sat = max(0.0, min(1.0, pos.x() / max(1, self.width() - 1)))
+        self.val = 1.0 - max(0.0, min(1.0, pos.y() / max(1, self.height() - 1)))
+        self.update()
+        self.picked.emit(self.sat, self.val)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._pick(e.position())
+
+    def mouseMoveEvent(self, e):
+        if e.buttons() & Qt.MouseButton.LeftButton:
+            self._pick(e.position())
+
+
+class HueBar(QWidget):
+    """Vertical hue strip, red at the top round to red at the bottom."""
+
+    picked = Signal(float)  # hue in 0..1
+
+    def __init__(self):
+        super().__init__()
+        self.hue = 0.0
+        self.setFixedSize(22, 160)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAccessibleName("Hue")
+
+    def set_hue(self, hue):
+        self.hue = hue
+        self.update()
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        g = QLinearGradient(0, r.top(), 0, r.bottom())
+        for i in range(7):
+            g.setColorAt(i / 6, QColor.fromHsvF((i / 6) % 1.0, 1.0, 1.0))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(g)
+        p.drawRoundedRect(r, 6, 6)
+        y = r.top() + self.hue * r.height()
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor("#000000"), 3))
+        p.drawRoundedRect(QRectF(r.left() - 1, y - 4, r.width() + 2, 8), 3, 3)
+        p.setPen(QPen(QColor("#ffffff"), 1.5))
+        p.drawRoundedRect(QRectF(r.left() - 1, y - 4, r.width() + 2, 8), 3, 3)
+        p.end()
+
+    def _pick(self, pos):
+        self.hue = max(0.0, min(0.9999, pos.y() / max(1, self.height() - 1)))
+        self.update()
+        self.picked.emit(self.hue)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._pick(e.position())
+
+    def mouseMoveEvent(self, e):
+        if e.buttons() & Qt.MouseButton.LeftButton:
+            self._pick(e.position())
+
+
+class ColorPickerDialog(QDialog):
+    """The app's own color picker: hue bar + saturation/value square, hex entry, swatches for the
+    app accent and the layout's other colors, and a live idle/pressed preview of the pad."""
+
+    color_changed = Signal(QColor)
+
+    def __init__(self, parent, cfg, key):
+        super().__init__(parent)
+        self.cfg, self.key = cfg, key
+        self._color = QColor(cfg["colors"][key])
+        self._preview_cfg = {"colors": dict(cfg["colors"]), "font": cfg.get("font", {"family": "Segoe UI", "size": 13, "bold": True}),
+                             "cell_w": cfg.get("cell_w", 100), "cell_h": cfg.get("cell_h", 140),
+                             "shape": cfg.get("shape", "rect"), "pad_style": cfg.get("pad_style", "classic"),
+                             "theme": cfg.get("theme", "dark"), "opacity": cfg.get("opacity", 0.85)}
+        pretty = key.replace("_", " ")
+        self.setWindowTitle(f"{pretty[:1].upper()}{pretty[1:]} color")
+        self.setPalette(parent.palette())
+        self.setStyleSheet(parent.styleSheet())
+        self.setModal(True)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 18, 20, 18)
+        root.setSpacing(14)
+        root.addWidget(section(pretty))
+
+        top = QHBoxLayout()
+        top.setSpacing(12)
+        self.square = SatValSquare()
+        self.square.picked.connect(self._from_square)
+        self.hue_bar = HueBar()
+        self.hue_bar.picked.connect(self._from_hue)
+        top.addWidget(self.square)
+        top.addWidget(self.hue_bar)
+        side = QVBoxLayout()
+        side.setSpacing(8)
+        side.addWidget(muted("Hex"))
+        self.hex = QLineEdit()
+        self.hex.setFixedWidth(110)
+        self.hex.setAccessibleName("Hex color")
+        self.hex.setStyleSheet("font-family: Consolas, 'Segoe UI';")
+        self.hex.textChanged.connect(self._from_hex)
+        side.addWidget(self.hex)
+        side.addStretch(1)
+        top.addLayout(side)
+        top.addStretch(1)
+        root.addLayout(top)
+
+        root.addWidget(muted("Swatches"))
+        swatches = QGridLayout()
+        swatches.setHorizontalSpacing(6)
+        swatches.setVerticalSpacing(6)
+        others = [v for k, v in cfg["colors"].items() if k != key]
+        seen = []
+        for hexval in list(PRESET_COLORS) + others:
+            hexval = QColor(hexval).name()
+            if hexval in seen:
+                continue
+            seen.append(hexval)
+        for i, hexval in enumerate(seen):
+            b = QPushButton()
+            b.setProperty("color", hexval)
+            b.setFixedSize(26, 26)
+            b.setToolTip(hexval.upper())
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setStyleSheet(f"QPushButton {{ background: {hexval}; border: 1px solid {theme_colors(cfg)['strong_line']}; "
+                            f"border-radius: 13px; padding: 0; }} QPushButton:hover {{ border: 2px solid {theme_colors(cfg)['accent']}; }}")
+            b.clicked.connect(lambda _checked=False, h=hexval: self.set_color(QColor(h)))
+            swatches.addWidget(b, i // 8, i % 8)
+        swatches.setColumnStretch(8, 1)
+        root.addLayout(swatches)
+
+        root.addWidget(muted("Preview"))
+        self.preview = PadPreview(self._preview_cfg)
+        self.preview.setFixedHeight(150)
+        root.addWidget(self.preview)
+
+        self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Use color")
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setObjectName("primary")
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        root.addWidget(self.buttons)
+        self.set_color(self._color)
+
+    def color(self):
+        return QColor(self._color)
+
+    def set_color(self, col):
+        if not col.isValid():
+            return
+        self._color = QColor(col)
+        h, s_, v, _a = col.getHsvF()
+        if h < 0:  # greys have no hue: keep the last one so the square does not jump
+            h = self.square.hue
+        self.square.set_hsv(h, s_, v)
+        self.hue_bar.set_hue(h)
+        if self.hex.text().lower() != col.name():
+            self.hex.setText(col.name())
+        self._preview_cfg["colors"][self.key] = col.name()
+        self.preview.update()
+        self.color_changed.emit(QColor(col))
+
+    def _from_square(self, sat, val):
+        self.set_color(QColor.fromHsvF(self.square.hue, sat, val))
+
+    def _from_hue(self, hue):
+        self.set_color(QColor.fromHsvF(hue, self.square.sat, self.square.val))
+
+    def _from_hex(self, text):
+        text = text.strip()
+        if text and not text.startswith("#"):
+            text = "#" + text
+        col = QColor(text)
+        if col.isValid() and len(text) == 7:
+            self.set_color(col)
 
 
 class PadLayoutEditor(QWidget):

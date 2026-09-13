@@ -23,7 +23,7 @@ import time
 
 from pynput import keyboard, mouse
 from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QFont, QFontMetrics, QFontMetricsF, QGuiApplication, QIcon, QPainter, QPainterPath, QPen, QPixmap, QTransform
+from PySide6.QtGui import QAction, QBrush, QColor, QFont, QFontMetrics, QFontMetricsF, QGuiApplication, QIcon, QImage, QPainter, QPainterPath, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
 
 from gamepad import Gamepad, is_gamepad_input
@@ -584,9 +584,9 @@ def draw_pad(p, rect, shape, style, radius, c, t):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(mix(c["idle_fill"].lighter(140), c["pressed_fill"], t)))
         p.drawPath(shape_path(face, shape, max(1.0, radius * 0.7)))
-    elif style == "underline":  # flat tile, no border; a bar along the bottom carries the state
+    elif style == "underline":  # flat tile, no border; the fill and a bar along the bottom carry the state
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(mix(c["idle_fill"], c["pressed_fill"], t * 0.35)))
+        p.setBrush(QBrush(mix(c["idle_fill"], c["pressed_fill"], t)))
         p.drawPath(body)
         bar_h = max(2.0, rect.height() * 0.08)
         faint = QColor(c["idle_outline"])
@@ -596,7 +596,6 @@ def draw_pad(p, rect, shape, style, radius, c, t):
         p.setBrush(QBrush(mix(faint, c["pressed_outline"], t)))
         p.drawRect(QRectF(rect.x(), rect.bottom() - bar_h, rect.width(), bar_h))
         p.restore()
-        text = mix(c["idle_text"], c["pressed_outline"], t)
     else:  # classic, pill
         p.setBrush(QBrush(mix(c["idle_fill"], c["pressed_fill"], t)))
         p.setPen(QPen(outline, 1.2 + t))
@@ -657,6 +656,7 @@ class Overlay(QWidget):
         self.capture_pad = None  # pad being rebound by clicking it in edit mode
         self._drag_origin = None
         self._press_pos = None
+        self._scene = None  # offscreen image the scene is painted into (see paintEvent)
         self.gamepad = Gamepad()
         self._gp_pressed = set()
 
@@ -717,8 +717,7 @@ class Overlay(QWidget):
 
         self.hotkeys = {name: vks_for_label(cfg["hotkeys"].get(name, ""))
                         for name in ("toggle", "quit", "settings", "edit")}
-        if not self.edit_mode:
-            self.setWindowOpacity(cfg.get("opacity", 0.85))
+        self.setWindowOpacity(1.0)  # opacity is painted per pad (see paintEvent), never on the window
         w, h = self.extent()
         pulled = visible_position(cfg["x"], cfg["y"], int(w), int(h), screen_rects())
         moved = pulled != (cfg["x"], cfg["y"])
@@ -864,8 +863,42 @@ class Overlay(QWidget):
     def _draw_shape(self, p, pad):
         p.drawPath(pad.path if pad.path is not None else shape_path(pad.rect, pad.shape, self.radius))
 
+    def element_opacity(self, level=0.0):
+        """Idle elements sit at the chosen opacity; a lit one rises to solid so a pressed key
+        always shows at full strength whatever the slider says. Editing paints everything solid."""
+        base = 1.0 if self.edit_mode else float(self.cfg.get("opacity", 0.85))
+        return base + (1.0 - base) * max(0.0, min(1.0, level))
+
     def paintEvent(self, _event):
+        """Two passes: the scene is painted solid into an image, drawn at the idle opacity,
+        then every lit pad or stick region is drawn again at its level. Drawing a region at
+        opacity a and then b composes to 1-(1-a)(1-b), so a second pass at `level` lands
+        exactly on element_opacity(level) with no layer compounding inside a pad."""
+        dpr = self.devicePixelRatio()
+        size = self.size() * dpr
+        if self._scene is None or self._scene.size() != size:
+            self._scene = QImage(size, QImage.Format.Format_ARGB32_Premultiplied)
+            self._scene.setDevicePixelRatio(dpr)
+        self._scene.fill(Qt.GlobalColor.transparent)
+        sp = QPainter(self._scene)
+        self._paint_scene(sp)
+        sp.end()
         p = QPainter(self)
+        base = self.element_opacity()
+        p.setOpacity(base)
+        p.drawImage(QPointF(0, 0), self._scene)
+        if base < 1.0:
+            lit = [(pad.rect, pad.level) for pad in self.pads if pad.level > 0.01]
+            lit += [(st.rect, max(st.level, min(1.0, math.hypot(st.offset.x(), st.offset.y()))))
+                    for st in self.sticks if max(st.level, math.hypot(st.offset.x(), st.offset.y())) > 0.01]
+            for rect, level in lit:
+                area = rect.adjusted(-8, -8, 8, 8)  # glow spills a few px past the pad
+                source = QRectF(area.x() * dpr, area.y() * dpr, area.width() * dpr, area.height() * dpr)
+                p.setOpacity(min(1.0, level))
+                p.drawImage(area, self._scene, source)
+        p.end()
+
+    def _paint_scene(self, p):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setFont(self.font)
         c = self.col
@@ -1037,7 +1070,6 @@ class Overlay(QWidget):
             p.drawRoundedRect(bar, 5, 5)
             p.setPen(frame)
             p.drawText(need, flags, hint)
-        p.end()
 
     # ---- edit mode: drag to move, wheel to scale, click to rebind -------
     def edit_hint(self):
@@ -1071,7 +1103,6 @@ class Overlay(QWidget):
         was_visible = self.isVisible()
         self.setWindowFlag(Qt.WindowType.WindowTransparentForInput, not on)
         self.setWindowFlag(Qt.WindowType.WindowDoesNotAcceptFocus, not on)
-        self.setWindowOpacity(1.0 if on else self.cfg.get("opacity", 0.85))  # solid while editing
         if was_visible:
             self.show()
         self.setCursor(Qt.CursorShape.SizeAllCursor if on else Qt.CursorShape.ArrowCursor)
