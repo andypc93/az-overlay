@@ -27,7 +27,9 @@ from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QFont, QFontMetrics, QFontMetricsF, QGuiApplication, QIcon, QImage, QPainter, QPainterPath, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
 
+import applog
 from gamepad import Gamepad, is_gamepad_input
+from single_instance import SingleInstance, default_name as instance_name
 from version import __version__
 
 APP_NAME = "AZ-Overlay"
@@ -584,20 +586,31 @@ def shape_path(rect, shape, radius):
 # Xbox body outline, authored in a 400 x 372 unit frame
 # (docs/superpowers/specs/2026-09-13-xbox-silhouette-design.md).
 XBOX_BODY = [
-    ("M", (88, 88)),
-    ("C", (130, 58), (270, 58), (312, 88)),      # top edge
-    ("C", (350, 100), (372, 130), (380, 172)),   # right shoulder
-    ("C", (392, 230), (372, 300), (352, 340)),   # right grip, outer
-    ("C", (340, 362), (300, 362), (288, 340)),   # right grip, bottom
-    ("C", (272, 312), (262, 284), (250, 258)),   # right grip, inner
-    ("C", (236, 240), (164, 240), (150, 258)),   # crotch
-    ("C", (138, 284), (128, 312), (112, 340)),   # left grip, inner
-    ("C", (100, 362), (60, 362), (48, 340)),     # left grip, bottom
-    ("C", (28, 300), (8, 230), (20, 172)),       # left grip, outer
-    ("C", (28, 130), (50, 100), (88, 88)),       # left shoulder
+    ("M", (24, 80)),                              # left shoulder
+    ("C", (32, 72), (44, 67), (54, 64)),          # up to the left bumper
+    ("C", (56, 50), (60, 42), (70, 42)),          # bumper hump rises
+    ("L", (118, 42)),
+    ("C", (126, 42), (130, 50), (132, 62)),       # hump falls into the notch
+    ("C", (136, 50), (140, 44), (150, 44)),       # raised centre block
+    ("L", (250, 44)),
+    ("C", (260, 44), (264, 50), (268, 62)),
+    ("C", (270, 50), (274, 42), (282, 42)),       # right bumper hump
+    ("L", (330, 42)),
+    ("C", (340, 42), (344, 50), (346, 64)),
+    ("C", (356, 67), (368, 72), (376, 80)),       # right shoulder
+    ("C", (392, 100), (398, 130), (396, 156)),    # right flank
+    ("C", (393, 200), (376, 262), (362, 306)),    # right grip, outer
+    ("C", (358, 320), (346, 328), (332, 324)),    # right grip, bottom
+    ("C", (314, 318), (296, 292), (280, 264)),    # right grip, inner
+    ("C", (270, 246), (240, 238), (200, 238)),    # crotch
+    ("C", (160, 238), (130, 246), (120, 264)),
+    ("C", (104, 292), (86, 318), (68, 324)),      # left grip
+    ("C", (54, 328), (42, 320), (38, 306)),
+    ("C", (24, 262), (7, 200), (4, 156)),
+    ("C", (2, 130), (8, 100), (24, 80)),
 ]
 XBOX_FRAME = (400.0, 372.0)
-XBOX_BACK_GHOSTS = [(70, 30, 64, 22), (266, 30, 64, 22), (70, 60, 64, 18), (266, 60, 64, 18)]  # triggers, bumpers
+XBOX_BACK_GHOSTS = [(60, 12, 64, 22), (276, 12, 64, 22)]  # triggers; the bumpers are part of the body line
 
 
 def _xbox_body(rect):
@@ -611,6 +624,8 @@ def _xbox_body(rect):
     for op, *pts in XBOX_BODY:
         if op == "M":
             path.moveTo(pt(pts[0]))
+        elif op == "L":
+            path.lineTo(pt(pts[0]))
         else:
             path.cubicTo(pt(pts[0]), pt(pts[1]), pt(pts[2]))
     path.closeSubpath()
@@ -1485,13 +1500,23 @@ def app_icon(color="#c9d400"):
     return QIcon(pm)
 
 
+LOG_PATH = None  # set by main()
+
+
+def recovery_message(backup_path):
+    """Tray balloon shown once after config.json had to be moved aside. Layouts
+    live in their own files and are untouched, so only globals were reset."""
+    return (f"{APP_NAME} settings were reset",
+            f"config.json could not be read. Hotkeys and theme are back to defaults; "
+            f"your layouts are untouched. The old file is saved as {os.path.basename(backup_path)}.")
+
+
 def main():
+    global LOG_PATH
     ensure_user_data()
-    try:
-        cfg = load_config()
-    except (OSError, ValueError) as e:
-        print(f"Could not load {CONFIG_PATH}: {e}", file=sys.stderr)
-        sys.exit(1)
+    LOG_PATH = applog.setup(_BASE)
+    applog.install_excepthook()
+    logging.getLogger("az").info("%s %s starting (frozen=%s, data=%s)", APP_NAME, __version__, FROZEN, _BASE)
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")  # consistent widget rendering; stylesheet in settings_ui relies on it
@@ -1501,6 +1526,13 @@ def main():
     icon = app_icon()
     app.setWindowIcon(icon)
 
+    instance = SingleInstance(instance_name(), app)
+    if not instance.acquire():
+        logging.getLogger("az").info("Another copy is running; asked it to show settings and exiting")
+        sys.exit(0)
+
+    cfg = load_config()
+
     overlay = Overlay(cfg)
     overlay.show()
 
@@ -1509,14 +1541,19 @@ def main():
     settings = SettingsWindow(overlay)
     app.aboutToQuit.connect(settings._save_now)
     overlay.open_settings.connect(settings.present)
+    instance.activate_requested.connect(settings.present)
 
     tray = QSystemTrayIcon(icon)
     tray.setToolTip(f"{APP_NAME} — right-click for settings")
     tray.setContextMenu(tray_menu(overlay, settings.present))
     tray.activated.connect(lambda r: settings.present() if r == QSystemTrayIcon.ActivationReason.DoubleClick else None)
     tray.show()
-    tray.showMessage(f"{APP_NAME} running", "Double-click the tray icon or press Ctrl+Alt+S for settings.",
-                     icon, 3000)
+    if RECOVERED_CONFIG_BACKUP:
+        title, body = recovery_message(RECOVERED_CONFIG_BACKUP)
+        tray.showMessage(title, body, QSystemTrayIcon.MessageIcon.Warning, 8000)
+    else:
+        tray.showMessage(f"{APP_NAME} running", "Double-click the tray icon or press Ctrl+Alt+S for settings.",
+                         icon, 3000)
 
     sys.exit(app.exec())
 

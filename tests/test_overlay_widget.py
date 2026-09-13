@@ -171,3 +171,10 @@ def test_locked_layout_rebinds_only_editable_pads(window):
         ov.capturing, ov.capture_pad = False, None
     QTest.mouseClick(ov, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, a.rect.center().toPoint())
     assert ov.cfg["keys"][a.source[1]]["input"] == "gp:a"  # right-click clears nothing on a fixed pad
+
+
+def test_recovery_message_names_the_backup_file():
+    title, body = overlay.recovery_message(r"C:\data\config.json.bak")
+    assert "reset" in title.lower() or "reset" in body.lower()
+    assert "config.json.bak" in body
+    assert "profile" not in (title + body).lower()  # UI says layout, never profile

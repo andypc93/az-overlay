@@ -11,3 +11,8 @@ dist/
 htmlcov/
 coverage.xml
 junit.xml
+
+# Runtime log and config backup (from-source runs write them next to overlay.py)
+az-overlay.log
+az-overlay.log.*
+config.json.bak

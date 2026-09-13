@@ -183,6 +183,7 @@ modifiers stay fixed.
 
 Replacing or rebuilding the executable preserves your saved settings. Back up
 the data folder to keep a copy of your layouts.
+The log file `az-overlay.log` sits in the same folder as `config.json`.
 
 <details>
 <summary><strong>Editing the configuration manually</strong></summary>
@@ -244,6 +245,15 @@ python -m pytest -q
 - Use **windowed or borderless** display mode. Exclusive fullscreen can hide the overlay.
 - Controller input uses SDL's game-controller mappings. Detection depends on the device and its driver.
 - The app uses global input hooks. Check your game's rules before using it with anti-cheat software.
+
+## Troubleshooting
+
+| Symptom | What to do |
+| :--- | :--- |
+| Nothing happens when you launch it | It is already running: the launch brought the existing copy's settings window to the front. Look for the tray icon. |
+| A balloon says settings were reset | `config.json` could not be read and was copied to `config.json.bak` next to it. Layouts are separate files and are untouched. |
+| It crashed or misbehaves | Read `az-overlay.log` in the data folder (see the table above). Include it when reporting a problem. |
+| Which version do I have? | **About** in settings shows it, and **Check for updates** opens the releases page. |
 
 ## Support AZ-Overlay
 

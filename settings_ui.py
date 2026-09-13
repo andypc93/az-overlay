@@ -1645,6 +1645,9 @@ class SettingsWindow(QWidget):
         tip_layout.addWidget(section("Can’t see your overlay?"))
         tip_layout.addWidget(muted(
             "Turn on Overlay visible below, and use windowed or borderless mode in your game."))
+        tip_layout.addWidget(muted(
+            "Something else wrong? The log file az-overlay.log in the app's data folder "
+            "records errors. Include it when you write in."))
         return self._page("Help", "Get set up, find your way, or send an idea.", contact, guide, tip)
 
     def _email_support(self):
