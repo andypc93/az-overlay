@@ -153,3 +153,21 @@ def test_pull_back_tells_settings_the_position_changed(window, one_screen):
     assert changed == [(40 - window.width(), 200)]
     window.apply()  # already visible: nothing to report
     assert len(changed) == 1
+
+
+def test_locked_layout_rebinds_only_editable_pads(window):
+    import templates
+    ov = window
+    ov.cfg.update(templates.build("Xbox controller", "Xbox Elite Series 2"))
+    ov.apply()
+    by_label = {p.label: p for p in ov.pads}
+    a, p2 = by_label["A"], by_label["P2"]
+    assert not ov.pad_editable(a) and ov.pad_editable(p2)
+    for pad, expect in ((a, False), (p2, True)):
+        spot = pad.rect.center().toPoint()
+        QTest.mousePress(ov, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, spot)
+        QTest.mouseRelease(ov, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, spot)
+        assert ov.capturing is expect and (ov.capture_pad is pad) is expect
+        ov.capturing, ov.capture_pad = False, None
+    QTest.mouseClick(ov, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, a.rect.center().toPoint())
+    assert ov.cfg["keys"][a.source[1]]["input"] == "gp:a"  # right-click clears nothing on a fixed pad

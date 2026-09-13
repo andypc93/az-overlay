@@ -1169,6 +1169,14 @@ class Overlay(QWidget):
                 return pad
         return None
 
+    def pad_editable(self, pad):
+        """Clicking this pad in edit mode may rebind it: every pad on a free layout, flagged pads on a locked one."""
+        if pad is None or not pad.source:
+            return False
+        if not self.cfg.get("locked"):
+            return True
+        return pad.source[0] == "key" and bool(self.cfg["keys"][pad.source[1]].get("editable"))
+
     def mousePressEvent(self, e):
         if not self.edit_mode:
             return
@@ -1181,7 +1189,7 @@ class Overlay(QWidget):
             pad = self.pad_at(e.position())
             self.capture_pad = None
             self.capturing = False
-            if pad is not None and pad.source and pad.source[0] == "key":
+            if self.pad_editable(pad) and pad.source[0] == "key":
                 self.set_pad_input(pad, "", clear_label=True)
             self.update()
 
@@ -1199,7 +1207,7 @@ class Overlay(QWidget):
         moved = (e.globalPosition() - self._press_pos).manhattanLength() if self._press_pos else 99
         if moved < 4:
             pad = self.pad_at(e.position())
-            if pad is not None and pad.source:
+            if self.pad_editable(pad):
                 self.capture_pad = pad
                 self.capturing = True
             else:
