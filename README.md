@@ -142,9 +142,11 @@ are set separately.
 | **Azeron** | Cyborg II, Cyborg II Compact, Cyborg, Cyborg Compact, Keyzen, Cyro, Classic, Compact |
 | **Keyboards** | 100%, 1800, 96%, 80% TKL, 75% and 65% exploded or compact, 60%, 50%, 40% |
 | **Mouse** | 2, 3, 5 and 8 buttons, and an MMO mouse with a 12-key thumb plate |
-| **Controllers** | Xbox and PlayStation, with analog sticks and triggers |
+| **Controllers** | Xbox Wireless, Xbox Elite Series 2 (with rear paddles), and PlayStation, with analog sticks and triggers |
 
 ![The five mouse templates](docs/mouse.png)
+
+![Xbox Elite Series 2: front and back bodies with the four paddles](docs/xbox.png)
 
 Keyboard templates include US (ANSI), UK, German, French, and Spanish (ISO)
 layouts. Azeron templates support keys and an analog thumbstick; the Cyro
@@ -152,6 +154,13 @@ template also supports mouse-button highlighting. Mouse templates show scroll
 ticks above and below the wheel; the MMO thumb plate uses the 1–9, 0, −, = keys
 that Naga and G600 style mice send by default. DPI and sniper buttons start
 unbound, so record an input for them on **Keys**.
+
+Xbox layouts are fixed drawings: the body and buttons stay where they are, and
+**Size** scales the whole controller. On the Elite, the four paddles on the
+back body are the only pads you edit. They start as `gp:paddle1` to
+`gp:paddle4`. If the Xbox Accessories app maps a paddle to another button,
+Windows reports only that button, so select the paddle and record the button
+it is mapped to.
 
 ## Keyboard shortcuts
 
@@ -189,6 +198,8 @@ your changes.
 | `cell_w`, `cell_h`, `gap` | Base key dimensions and spacing |
 | `keys` | Labels, input bindings, positions, dimensions, and shapes |
 | `decor` | Silhouettes drawn behind the pads, such as a mouse body |
+| `locked` | `true` for fixed drawings such as the Xbox layouts: positions and pad count cannot be edited |
+| `editable` (per key) | On a locked layout, the pads whose label and input may still change, such as the Elite paddles |
 | `pad_style`, `shape` | How keys are drawn: `classic`, `outline`, `keycap`, `underline`, `pill`; `rect` or `circle` |
 | `stick_style`, `stick_box` | Stick look: `classic`, `ring`, `petals`, `vector`, `keys`; box behind each stick |
 | `sticks` | Direction bindings, analog axes, click input, and geometry |

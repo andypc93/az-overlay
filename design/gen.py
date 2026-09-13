@@ -710,6 +710,8 @@ def qpath_to_svg(path):
     while i < n:
         e = path.elementAt(i)
         if e.type == QPainterPath.ElementType.MoveToElement:
+            if out:
+                out.append("Z")
             out.append(f"M {e.x:.1f} {e.y:.1f}")
         elif e.type == QPainterPath.ElementType.LineToElement:
             out.append(f"L {e.x:.1f} {e.y:.1f}")
@@ -762,6 +764,60 @@ def mouse_board():
              f'<svg width="{fw}" height="{fh}" viewBox="0 0 {fw} {fh}" xmlns="http://www.w3.org/2000/svg" style="display: block;">{svg}</svg></div>')
     return inner, fw, fh
 
+
+
+def xbox_board():
+    """Xbox Wireless front, Elite front and back: geometry straight from the app."""
+    radius = 4.0  # min(10, 20 * 0.2)
+    font_px = 9 * PT
+    lit = {"A", "P2"}
+    x_cursor, gap, top = 30.0, 60.0, 50.0
+    svg, bottom = "", 0
+    for title, prof in (("Xbox Wireless", app_templates.xbox_profile(False)),
+                        ("Xbox Elite Series 2", app_templates.xbox_profile(True))):
+        cw = ch = float(prof["cell_w"])
+
+        def cell(col, row, w, h):
+            return QRectF(x_cursor + col * cw + 2, top + row * ch + 2, w * cw, h * ch)
+        rects = []
+        for d in prof["decor"]:
+            r = cell(d["col"], d["row"], d["w"], d["h"])
+            rects.append(r)
+            svg += (f'<path d="{qpath_to_svg(app_overlay.decor_path(d["kind"], r))}" fill="{C["idle_fill"]}" '
+                    f'stroke="{C["idle_outline"]}" stroke-opacity="0.47" stroke-width="1.2"></path>')
+        for st in prof["sticks"]:
+            r = cell(st["col"], st["row"], st["w"], st["h"])
+            rects.append(r)
+            rad = min(r.width(), r.height()) * 0.30
+            cx, cy = r.center().x(), r.center().y()
+            svg += f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{rad:.1f}" fill="{C["idle_fill"]}" stroke="{C["idle_outline"]}" stroke-width="1.2"></circle>'
+            if st.get("axes"):
+                svg += f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{rad * 0.42:.1f}" fill="{C["idle_outline"]}"></circle>'
+            else:
+                for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+                    svg += (f'<circle cx="{cx + dx * rad * 0.62:.1f}" cy="{cy + dy * rad * 0.62:.1f}" r="{rad * 0.30:.1f}" '
+                            f'fill="{C["idle_fill"]}" stroke="{C["idle_outline"]}" stroke-width="1.2"></circle>')
+        for k in prof["keys"]:
+            r = cell(k["col"], k["row"], k["w"], k["h"])
+            rects.append(r)
+            on = k["label"] in lit
+            body = qpath_to_svg(app_overlay.shape_path(r, k.get("shape", "rect"), radius))
+            if on:
+                svg += (f'<path d="{body}" fill="none" stroke="{C["pressed_outline"]}" stroke-opacity="0.18" stroke-width="12"></path>'
+                        f'<path d="{body}" fill="none" stroke="{C["pressed_outline"]}" stroke-opacity="0.09" stroke-width="6"></path>')
+            svg += (f'<path d="{body}" fill="{C["pressed_fill"] if on else C["idle_fill"]}" stroke="{C["idle_outline"]}" '
+                    f'stroke-width="{2.2 if on else 1.2}"></path>')
+            tr = app_overlay.key_text_rect(r, k.get("shape", "rect"))
+            size = font_px if len(k["label"]) <= 4 else font_px * 0.8
+            svg += _txt(tr.center().x(), tr.center().y(), k["label"], size, C["pressed_text"] if on else C["idle_text"])
+        w = max(r.right() for r in rects) - x_cursor + 4
+        svg += _txt(x_cursor + w / 2, top - 22, title, 8 * PT, T["muted"], weight=400)
+        x_cursor += w + gap
+        bottom = max(bottom, max(r.bottom() for r in rects))
+    fw, fh = int(x_cursor - gap + 30), int(bottom + 40)
+    inner = (f'<div style="width: {fw}px; height: {fh}px; background: #0c0c0e; position: relative; overflow: hidden;">'
+             f'<svg width="{fw}" height="{fh}" viewBox="0 0 {fw} {fh}" xmlns="http://www.w3.org/2000/svg" style="display: block;">{svg}</svg></div>')
+    return inner, fw, fh
 
 
 # ---- Keys page pieces (visual layout, table, undo bar) ------------------------
@@ -871,6 +927,8 @@ for fname, (draw, name, motive, tradeoff) in STICK_OPTIONS.items():
     stick_boards[fname] = (sw, sh)
 mouse_html, mw, mh = mouse_board()
 boards["MouseLayouts.dc.html"] = mouse_html
+xbox_html, xw, xh = xbox_board()
+boards["XboxLayouts.dc.html"] = xbox_html
 pad_boards = {}
 for fname, (style, name, motive, tradeoff) in PAD_OPTIONS.items():
     html, pw, ph = pad_sheet(style, name, motive, tradeoff)
@@ -895,6 +953,7 @@ canvas = {
         {"file": "Help.dc.html", "title": "Settings · Help (full length)", "x": GX, "y": H + 140, "w": W, "h": HELP_H},
         {"file": "About.dc.html", "title": "Settings · About", "x": 2 * GX, "y": H + 140, "w": W, "h": H},
         {"file": "MouseLayouts.dc.html", "title": "Overlay · Mouse layouts", "x": 0, "y": H + 140 + KEYS_H + 140, "w": mw, "h": mh},
+        {"file": "XboxLayouts.dc.html", "title": "Overlay · Xbox layouts", "x": mw + 100, "y": H + 140 + KEYS_H + 140, "w": xw, "h": xh},
         {"file": "LayoutLight.dc.html", "title": "Settings · Layout (light)", "page": "page-4", "x": 0, "y": 0, "w": W, "h": H},
         {"file": "AppearanceLight.dc.html", "title": "Settings · Appearance (light)", "page": "page-4", "x": GX, "y": 0, "w": W, "h": H + 120},
         {"file": "AboutLight.dc.html", "title": "Settings · About (light)", "page": "page-4", "x": 2 * GX, "y": 0, "w": W, "h": H},

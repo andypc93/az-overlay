@@ -1,6 +1,7 @@
 """Regenerate the README screenshots of the settings pages (docs/layout.png,
-docs/keys.png, docs/appearance.png) and the overlay itself (docs/overlay.png,
-with a few inputs lit) from the real widgets at the screen's DPR.
+docs/keys.png, docs/appearance.png), the overlay itself (docs/overlay.png,
+with a few inputs lit), and the Xbox Elite layout (docs/xbox.png) from the real
+widgets at the screen's DPR.
 
   python debug/screenshots.py
 
@@ -71,10 +72,40 @@ def grab_overlay(name="overlay"):
     ov.close()
 
 
+def grab_xbox(name="xbox"):
+    """The Elite layout with A and the P2 paddle lit, over a dark backdrop."""
+    import templates
+    cfg = overlay.load_config()
+    cfg.update(templates.xbox_profile(True))
+    cfg["scale"] = 1.0
+    ov = overlay.Overlay(cfg)
+    ov.show()
+    QTest.qWait(200)
+    for pad in ov.pads:
+        if pad.label in ("A", "P2"):
+            pad.level = 1.0
+    ov.update()
+    QTest.qWait(100)
+    shot = ov.grab().toImage()
+    dpr = shot.devicePixelRatio()
+    out = QImage(shot.width() + int(2 * PAD * dpr), shot.height() + int(2 * PAD * dpr), QImage.Format.Format_ARGB32)
+    out.setDevicePixelRatio(dpr)
+    out.fill(QColor("#0b0b0b"))
+    p = QPainter(out)
+    p.drawImage(PAD, PAD, shot)
+    p.end()
+    path = os.path.join(DOCS, f"{name}.png")
+    out.save(path)
+    print("wrote", path)
+    ov.tick.stop()
+    ov.close()
+
+
 def main():
     app = QApplication.instance() or QApplication(sys.argv)
     app.setStyle("Fusion")
     grab_overlay()
+    grab_xbox()
     settings_ui.save_config = lambda cfg: None  # never write the repo config from here
     window = settings_ui.SettingsWindow(StubOverlay())
     window.resize(1040, 860)

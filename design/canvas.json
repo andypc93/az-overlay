@@ -57,6 +57,14 @@
       "h": 348
     },
     {
+      "file": "XboxLayouts.dc.html",
+      "title": "Overlay \u00b7 Xbox layouts",
+      "x": 1358,
+      "y": 2240,
+      "w": 1382,
+      "h": 464
+    },
+    {
       "file": "LayoutLight.dc.html",
       "title": "Settings \u00b7 Layout (light)",
       "page": "page-4",
