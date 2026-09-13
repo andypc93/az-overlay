@@ -161,6 +161,8 @@ back body are the only pads you edit. They start as `gp:paddle1` to
 `gp:paddle4`. If the Xbox Accessories app maps a paddle to another button,
 Windows reports only that button, so select the paddle and record the button
 it is mapped to.
+The controller body is traced from Nicolae Berbece's CC0 Xbox Series controller
+diagram on Wikimedia Commons.
 
 ## Keyboard shortcuts
 

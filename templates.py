@@ -430,7 +430,7 @@ PLAYSTATION = {"lt": "L2", "rt": "R2", "lb": "L1", "rb": "R1", "back": "Create",
 
 # ---- Xbox: a fixed drawing, not a grid ----------------------------------------
 # Geometry from the approved mockup (docs/superpowers/specs/2026-09-13-xbox-silhouette-design.md),
-# authored in a 400 x 372 unit frame at 20 units per cell. The col/row values only
+# authored in a 400 x 300 unit frame at 20 units per cell. The col/row values only
 # feed cell_rect; the layout is locked, so nobody edits them.
 XBOX_TEMPLATES = ["Xbox Wireless", "Xbox Elite Series 2"]
 XBOX_CELL = 20
@@ -452,33 +452,33 @@ def _circle(cx, cy, r, label, inp):
 def xbox_profile(elite=False):
     """Xbox Wireless, or Elite Series 2 with a second body for the four rear paddles."""
     keys = [
-        _u(60, 12, 64, 22, label="LT", axis="gp:lefttrigger", input="gp:lefttrigger"),
-        _u(276, 12, 64, 22, label="RT", axis="gp:righttrigger", input="gp:righttrigger"),
-        _u(60, 44, 64, 18, label="LB", input="gp:leftshoulder"),   # sits on the bumper hump
-        _u(276, 44, 64, 18, label="RB", input="gp:rightshoulder"),
-        _circle(200, 74, 18, "ⓧ", "gp:guide"),
-        _u(150, 120, 30, 18, label="View", input="gp:back"),
-        _u(220, 120, 30, 18, label="Menu", input="gp:start"),
-        _u(186, 144, 28, 14, label="Profile", input="") if elite
-        else _u(186, 144, 28, 14, label="Share", input="gp:misc1"),
-        _circle(306, 98, 15, "Y", "gp:y"),
-        _circle(275, 129, 15, "X", "gp:x"),
-        _circle(337, 129, 15, "B", "gp:b"),
-        _circle(306, 160, 15, "A", "gp:a"),
+        _u(56, 27, 60, 20, label="LT", axis="gp:lefttrigger", input="gp:lefttrigger"),   # on the trigger fins
+        _u(284, 27, 60, 20, label="RT", axis="gp:righttrigger", input="gp:righttrigger"),
+        _u(56, 52, 78, 18, label="LB", input="gp:leftshoulder"),   # along the bumpers
+        _u(266, 52, 78, 18, label="RB", input="gp:rightshoulder"),
+        _circle(200, 98, 15, "ⓧ", "gp:guide"),
+        _u(157, 132, 26, 16, label="View", input="gp:back"),
+        _u(217, 132, 26, 16, label="Menu", input="gp:start"),
+        _u(188, 151, 24, 12, label="Profile", input="") if elite
+        else _u(188, 151, 24, 12, label="Share", input="gp:misc1"),
+        _circle(307.5, 112, 13.5, "Y", "gp:y"),
+        _circle(278.5, 139.5, 13.5, "X", "gp:x"),
+        _circle(336.5, 139.5, 13.5, "B", "gp:b"),
+        _circle(307.5, 163.5, 13.5, "A", "gp:a"),
     ]
     # Sticks draw their ring at 0.3 of the box, so the boxes overlap their neighbours; the rings do not.
     sticks = [
-        _u(40, 80, 100, 100, label="L", axes=["gp:leftx", "gp:lefty"], click="gp:leftstick"),
-        _u(96, 152, 96, 96, label="", up="gp:dpup", down="gp:dpdown", left="gp:dpleft", right="gp:dpright"),
-        _u(210, 152, 96, 96, label="R", axes=["gp:rightx", "gp:righty"], click="gp:rightstick"),
+        _u(54, 100, 84, 84, label="L", axes=["gp:leftx", "gp:lefty"], click="gp:leftstick"),
+        _u(95, 149, 100, 100, label="", up="gp:dpup", down="gp:dpdown", left="gp:dpleft", right="gp:dpright"),
+        _u(213, 160, 84, 84, label="R", axes=["gp:rightx", "gp:righty"], click="gp:rightstick"),
     ]
-    decor = [_u(0, 0, 400, 372, kind="xbox_front")]
+    decor = [_u(0, 0, 400, 300, kind="xbox_front")]
     if elite:
         bx = XBOX_BACK_COL * XBOX_CELL
-        decor.append(_u(bx, 0, 400, 372, kind="xbox_back"))
+        decor.append(_u(bx, 0, 400, 300, kind="xbox_back"))
         # Paddles hang from the lower back between the grips, as on the real controller.
-        for label, cx, cy, w, h, shape in (("P1", 170, 262, 20, 66, "paddle_l"), ("P2", 132, 282, 18, 48, "paddle_l"),
-                                           ("P3", 230, 262, 20, 66, "paddle_r"), ("P4", 268, 282, 18, 48, "paddle_r")):
+        for label, cx, cy, w, h, shape in (("P1", 172, 258, 18, 56, "paddle_l"), ("P2", 138, 272, 16, 42, "paddle_l"),
+                                           ("P3", 228, 258, 18, 56, "paddle_r"), ("P4", 262, 272, 16, 42, "paddle_r")):
             keys.append(_u(bx + cx - w / 2, cy - h / 2, w, h, label=label, shape=shape,
                            input=f"gp:paddle{label[1]}", editable=True))
     return {

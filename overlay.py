@@ -583,58 +583,43 @@ def shape_path(rect, shape, radius):
     return path
 
 
-# Xbox body outline, authored in a 400 x 372 unit frame
-# (docs/superpowers/specs/2026-09-13-xbox-silhouette-design.md).
-XBOX_BODY = [
-    ("M", (24, 80)),                              # left shoulder
-    ("C", (32, 72), (44, 67), (54, 64)),          # up to the left bumper
-    ("C", (56, 50), (60, 42), (70, 42)),          # bumper hump rises
-    ("L", (118, 42)),
-    ("C", (126, 42), (130, 50), (132, 62)),       # hump falls into the notch
-    ("C", (136, 50), (140, 44), (150, 44)),       # raised centre block
-    ("L", (250, 44)),
-    ("C", (260, 44), (264, 50), (268, 62)),
-    ("C", (270, 50), (274, 42), (282, 42)),       # right bumper hump
-    ("L", (330, 42)),
-    ("C", (340, 42), (344, 50), (346, 64)),
-    ("C", (356, 67), (368, 72), (376, 80)),       # right shoulder
-    ("C", (392, 100), (398, 130), (396, 156)),    # right flank
-    ("C", (393, 200), (376, 262), (362, 306)),    # right grip, outer
-    ("C", (358, 320), (346, 328), (332, 324)),    # right grip, bottom
-    ("C", (314, 318), (296, 292), (280, 264)),    # right grip, inner
-    ("C", (270, 246), (240, 238), (200, 238)),    # crotch
-    ("C", (160, 238), (130, 246), (120, 264)),
-    ("C", (104, 292), (86, 318), (68, 324)),      # left grip
-    ("C", (54, 328), (42, 320), (38, 306)),
-    ("C", (24, 262), (7, 200), (4, 156)),
-    ("C", (2, 130), (8, 100), (24, 80)),
+# Xbox Series controller silhouette in a 400 x 300 unit frame: the outer contour of
+# Nicolae Berbece's CC0 controller diagram (commons.wikimedia.org, XboxSeriesX_A_03.png),
+# traced and simplified; y starts at 26 so the frame has room below the grips for paddles.
+XBOX_OUTLINE = [
+    (88.9, 26), (94.8, 26), (97.5, 27.2), (99, 28.7), (103.7, 44.1), (106.4, 49.8),
+    (112.3, 49.2), (124.2, 49.5), (128.1, 50.7), (135.5, 55.1), (140.9, 57.2), (259.1, 57.2),
+    (264.5, 55.1), (271.9, 50.7), (275.8, 49.5), (286.5, 49.2), (293.9, 49.8), (296.6, 43.5),
+    (300.7, 29.3), (302.2, 27.5), (304, 26.6), (305.8, 26), (312.3, 26.3), (317.1, 28.4),
+    (318.6, 29.6), (324.5, 38.5), (329.3, 48), (333.7, 58.7), (340.6, 63.4), (343.2, 66.1),
+    (345, 69.7), (354.5, 79.8), (358.1, 85.4), (377.1, 134.8), (390.5, 175.5), (397.6, 204.6),
+    (399.7, 219.2), (400, 232.5), (398.8, 245), (396.7, 253.6), (392.3, 264), (388.1, 270),
+    (381.6, 276.8), (370.9, 284.8), (367.9, 286.3), (362.6, 287.8), (355.7, 287.8), (348, 285.1),
+    (341.8, 281.9), (319.2, 266.1), (304.9, 256.9), (293.3, 251.6), (282.3, 248.6), (268.4, 246.8),
+    (248.1, 245.9), (141.8, 246.2), (131.6, 246.8), (117.7, 248.6), (110.3, 250.4), (102.2, 253.3),
+    (95.1, 256.9), (83.8, 264), (58.2, 281.9), (52.6, 284.8), (45.8, 287.5), (37.4, 287.8),
+    (34.8, 287.2), (29.1, 284.8), (22.3, 280.1), (13.4, 271.8), (7.7, 264), (4.2, 256.3),
+    (1.2, 245), (0, 232.2), (0.3, 218.9), (2.1, 205.8), (6.8, 184.7), (13.7, 161.2),
+    (22, 136.8), (29.4, 116.6), (42.2, 84.8), (47, 78), (55, 69.7), (56.8, 66.1),
+    (60.6, 62.6), (66.3, 58.7), (75.2, 39.1), (80.8, 30.2), (82.9, 28.4),
 ]
-XBOX_FRAME = (400.0, 372.0)
-XBOX_BACK_GHOSTS = [(60, 12, 64, 22), (276, 12, 64, 22)]  # triggers; the bumpers are part of the body line
+XBOX_FRAME = (400.0, 300.0)
 
 
 def _xbox_body(rect):
-    """The body path scaled into rect, plus the unit -> pixel factors."""
+    """The silhouette polygon scaled into rect."""
     sx, sy = rect.width() / XBOX_FRAME[0], rect.height() / XBOX_FRAME[1]
-
-    def pt(p):
-        return QPointF(rect.x() + p[0] * sx, rect.y() + p[1] * sy)
-
     path = QPainterPath()
-    for op, *pts in XBOX_BODY:
-        if op == "M":
-            path.moveTo(pt(pts[0]))
-        elif op == "L":
-            path.lineTo(pt(pts[0]))
-        else:
-            path.cubicTo(pt(pts[0]), pt(pts[1]), pt(pts[2]))
+    path.moveTo(rect.x() + XBOX_OUTLINE[0][0] * sx, rect.y() + XBOX_OUTLINE[0][1] * sy)
+    for x, y in XBOX_OUTLINE[1:]:
+        path.lineTo(rect.x() + x * sx, rect.y() + y * sy)
     path.closeSubpath()
-    return path, sx, sy
+    return path
 
 
 def decor_path(kind, rect):
     """Silhouette drawn behind the pads. "mouse": domed top, straight flanks, rounded tail.
-    "xbox_front" / "xbox_back": the controller body; the back adds faint trigger and bumper ghosts."""
+    "xbox_front" / "xbox_back": the Xbox Series controller body, front and back."""
     x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
     path = QPainterPath()
     if kind == "mouse":
@@ -646,11 +631,8 @@ def decor_path(kind, rect):
         path.lineTo(x + rb, y + h)
         path.arcTo(x, y + h - 2 * rb, 2 * rb, 2 * rb, 270, -90)
         path.closeSubpath()
-    elif kind in ("xbox_front", "xbox_back"):
-        path, sx, sy = _xbox_body(rect)
-        if kind == "xbox_back":
-            for gx, gy, gw, gh in XBOX_BACK_GHOSTS:
-                path.addRoundedRect(QRectF(x + gx * sx, y + gy * sy, gw * sx, gh * sy), 6 * sx, 6 * sy)
+    elif kind in ("xbox_front", "xbox_back"):  # the back is the same outline, turned over
+        path = _xbox_body(rect)
     else:
         path.addRoundedRect(rect, w * 0.1, w * 0.1)
     return path

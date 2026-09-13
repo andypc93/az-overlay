@@ -14,7 +14,7 @@ def _app():
 
 @pytest.mark.parametrize("kind", ["xbox_front", "xbox_back"])
 def test_xbox_decor_paths_fill_their_rect(kind):
-    rect = QRectF(10, 20, 400, 372)
+    rect = QRectF(10, 20, 400, 300)
     path = overlay.decor_path(kind, rect)
     box = path.boundingRect()
     assert not path.isEmpty()
@@ -22,12 +22,12 @@ def test_xbox_decor_paths_fill_their_rect(kind):
     assert box.width() > rect.width() * 0.9 and box.height() > rect.height() * 0.75
 
 
-def test_back_decor_carries_trigger_ghosts():
-    rect = QRectF(0, 0, 400, 372)
+def test_back_decor_is_the_same_outline():
+    rect = QRectF(0, 0, 400, 300)
     front = overlay.decor_path("xbox_front", rect)
     back = overlay.decor_path("xbox_back", rect)
-    assert back.elementCount() > front.elementCount()
-    assert back.boundingRect().top() < front.boundingRect().top()  # ghosts sit above the body
+    assert back == front
+    assert front.boundingRect().top() > rect.top() + 20  # room above the fins stays free
 
 
 @pytest.mark.parametrize("shape, sign", [("paddle_l", -1), ("paddle_r", 1)])
