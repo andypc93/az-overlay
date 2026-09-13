@@ -1,5 +1,6 @@
 """Regenerate the README screenshots of the settings pages (docs/layout.png,
-docs/keys.png, docs/appearance.png) from the real widgets at the screen's DPR.
+docs/keys.png, docs/appearance.png) and the overlay itself (docs/overlay.png,
+with a few inputs lit) from the real widgets at the screen's DPR.
 
   python debug/screenshots.py
 
@@ -11,6 +12,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PySide6.QtCore import Qt, Signal  # noqa: E402
+from PySide6.QtGui import QColor, QImage, QPainter  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
 
@@ -41,9 +43,38 @@ class StubOverlay(QWidget):
         pass
 
 
+LIT = ("X", "Space", "W")  # inputs shown held in docs/overlay.png
+PAD = 24  # px of dark background around the overlay
+
+
+def grab_overlay(name="overlay"):
+    """Real overlay with LIT inputs injected as key-down events, over a dark backdrop."""
+    ov = overlay.Overlay(overlay.load_config())
+    ov.show()
+    QTest.qWait(200)
+    for label in LIT:
+        for vk in overlay.vks_for_label(label):
+            ov.events.put(("down", vk))
+    QTest.qWait(250)  # pump() drains the queue and lights the pads
+    shot = ov.grab().toImage()
+    dpr = shot.devicePixelRatio()
+    out = QImage(shot.width() + int(2 * PAD * dpr), shot.height() + int(2 * PAD * dpr), QImage.Format.Format_ARGB32)
+    out.setDevicePixelRatio(dpr)
+    out.fill(QColor("#0b0b0b"))
+    p = QPainter(out)
+    p.drawImage(PAD, PAD, shot)
+    p.end()
+    path = os.path.join(DOCS, f"{name}.png")
+    out.save(path)
+    print("wrote", path)
+    ov.tick.stop()
+    ov.close()
+
+
 def main():
     app = QApplication.instance() or QApplication(sys.argv)
     app.setStyle("Fusion")
+    grab_overlay()
     settings_ui.save_config = lambda cfg: None  # never write the repo config from here
     window = settings_ui.SettingsWindow(StubOverlay())
     window.resize(1040, 860)
