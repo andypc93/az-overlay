@@ -451,11 +451,12 @@ def _circle(cx, cy, r, label, inp):
 
 def xbox_profile(elite=False):
     """Xbox Wireless, or Elite Series 2 with a second body for the four rear paddles."""
+    # The triggers and bumpers are the diagram's own shapes, placed where they are drawn.
     keys = [
-        _u(56, 27, 60, 20, label="LT", axis="gp:lefttrigger", input="gp:lefttrigger"),   # on the trigger fins
-        _u(284, 27, 60, 20, label="RT", axis="gp:righttrigger", input="gp:righttrigger"),
-        _u(56, 52, 78, 18, label="LB", input="gp:leftshoulder"),   # along the bumpers
-        _u(266, 52, 78, 18, label="RB", input="gp:rightshoulder"),
+        _u(68.6, 27.8, 35.4, 29.7, label="LT", shape="xbox_lt", axis="gp:lefttrigger", input="gp:lefttrigger"),
+        _u(296.0, 27.8, 35.4, 29.7, label="RT", shape="xbox_rt", axis="gp:righttrigger", input="gp:righttrigger"),
+        _u(52.6, 59.0, 88.6, 22.3, label="LB", shape="xbox_lb", input="gp:leftshoulder"),
+        _u(258.5, 59.0, 88.9, 22.3, label="RB", shape="xbox_rb", input="gp:rightshoulder"),
         _circle(200, 98, 15, "ⓧ", "gp:guide"),
         _u(157, 132, 26, 16, label="View", input="gp:back"),
         _u(217, 132, 26, 16, label="Menu", input="gp:start"),

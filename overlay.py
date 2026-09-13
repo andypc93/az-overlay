@@ -499,6 +499,10 @@ STICK_LABEL_FLAGS = Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight
 
 def key_text_rect(rect, shape="rect"):
     """Keep labels inside the border, including on circular buttons."""
+    if shape in XBOX_PARTS:  # slanted fins and bumpers: the label goes in the box that fits inside
+        tx, ty, tw, th = XBOX_PARTS[shape]["text"]
+        return QRectF(rect.x() + tx * rect.width(), rect.y() + ty * rect.height(),
+                      tw * rect.width(), th * rect.height())
     area = rect.adjusted(3, 2, -3, -2)
     if shape.startswith("mouse_"):  # the label sits under the domed top
         area.adjust(0, area.height() * 0.3, 0, 0)
@@ -571,6 +575,8 @@ def shape_path(rect, shape, radius):
         path.addEllipse(rect)
     elif shape.startswith("mouse_"):
         path = mouse_button_path(rect, left=shape.startswith("mouse_left"), full=shape.endswith("_full"))
+    elif shape in XBOX_PARTS:  # a trigger fin or a bumper, drawn as the real control
+        path = _xbox_part(rect, shape)
     elif shape in ("paddle_l", "paddle_r"):  # pill tilted 18° away from the controller's centre line
         r = min(rect.width(), rect.height()) / 2
         pill = QPainterPath()
@@ -580,6 +586,61 @@ def shape_path(rect, shape, radius):
         path = t.map(pill)
     else:
         path.addRoundedRect(rect, radius, radius)
+    return path
+
+
+# The trigger fins and the two bumpers, traced from the same diagram as XBOX_OUTLINE.
+# Each polygon is normalised to its own box, so a pad draws the real control at any size;
+# "text" is the widest box inside that polygon, where the label goes.
+XBOX_PARTS = {
+    "xbox_lt": {
+        "poly": [
+            (0.5714, 0), (0.7227, 0), (0.8067, 0.05), (0.8655, 0.24),
+            (0.916, 0.48), (1, 0.74), (0.8235, 0.75), (0.5546, 0.8),
+            (0.4958, 0.57), (0.4622, 0.27), (0.4538, 0.57), (0.5042, 0.82),
+            (0.2605, 0.88), (0, 1), (0.2185, 0.43), (0.3613, 0.15),
+            (0.437, 0.06),
+        ],
+        "text": [0.508, 0.238, 0.35, 0.416],
+    },
+    "xbox_rt": {
+        "poly": [
+            (0.2857, 0), (0.4118, 0), (0.5042, 0.03), (0.5714, 0.07),
+            (0.6387, 0.15), (0.7647, 0.39), (1, 1), (0.7647, 0.89),
+            (0.5042, 0.82), (0.5462, 0.6), (0.5378, 0.3), (0.5042, 0.58),
+            (0.4454, 0.81), (0.2185, 0.76), (0, 0.74), (0.0924, 0.46),
+            (0.1765, 0.09), (0.2185, 0.03),
+        ],
+        "text": [0.133, 0.248, 0.35, 0.416],
+    },
+    "xbox_lb": {
+        "poly": [
+            (0.6611, 0), (0.7651, 0), (0.849, 0.0933), (1, 0.3333),
+            (1, 0.4533), (0.6409, 0.4533), (0.5805, 0.48), (0.1611, 0.8267),
+            (0.0168, 1), (0, 0.9867), (0.0101, 0.8133), (0.057, 0.4267),
+            (0.104, 0.4267), (0.4698, 0.1067),
+        ],
+        "text": [0.375, 0.184, 0.532, 0.276],
+    },
+    "xbox_rb": {
+        "poly": [
+            (0.2375, 0), (0.3411, 0), (0.4548, 0.0533), (0.5652, 0.1333),
+            (0.8729, 0.4133), (0.9431, 0.4267), (0.9833, 0.7467), (1, 0.9867),
+            (0.9833, 1), (0.8328, 0.8267), (0.4381, 0.4933), (0.3512, 0.4533),
+            (0, 0.4533), (0, 0.3333), (0.1538, 0.0933),
+        ],
+        "text": [0.093, 0.184, 0.53, 0.276],
+    },
+}
+
+
+def _xbox_part(rect, shape):
+    poly = XBOX_PARTS[shape]["poly"]
+    path = QPainterPath()
+    path.moveTo(rect.x() + poly[0][0] * rect.width(), rect.y() + poly[0][1] * rect.height())
+    for fx, fy in poly[1:]:
+        path.lineTo(rect.x() + fx * rect.width(), rect.y() + fy * rect.height())
+    path.closeSubpath()
     return path
 
 

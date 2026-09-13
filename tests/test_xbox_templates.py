@@ -117,3 +117,28 @@ def test_elite_paints_and_covers_the_back_body(window):  # noqa: F811
     assert kinds == ["xbox_front", "xbox_back"]
     assert window.width() >= window.decor[1][1].right()
     window.grab()  # paints every pad, paddle, and both silhouettes
+
+
+@pytest.mark.parametrize("shape", ["xbox_lt", "xbox_rt", "xbox_lb", "xbox_rb"])
+def test_trigger_and_bumper_shapes_fill_their_pad(shape):
+    rect = QRectF(40, 30, 120, 60)
+    path = overlay.shape_path(rect, shape, 4)
+    box = path.boundingRect()
+    assert not path.isEmpty()
+    assert rect.adjusted(-0.5, -0.5, 0.5, 0.5).contains(box)
+    assert box.width() > rect.width() * 0.95 and box.height() > rect.height() * 0.95
+    text = overlay.key_text_rect(rect, shape)
+    assert rect.contains(text) and text.width() > 0 and text.height() > 0
+    assert path.contains(text.center())  # the label sits on the control, not beside it
+
+
+def test_triggers_and_bumpers_use_the_traced_shapes():
+    prof = templates.xbox_profile(False)
+    by_label = {k["label"]: k for k in prof["keys"]}
+    for label, shape in (("LT", "xbox_lt"), ("RT", "xbox_rt"), ("LB", "xbox_lb"), ("RB", "xbox_rb")):
+        assert by_label[label]["shape"] == shape
+    for label in ("LT", "RT"):
+        assert by_label[label]["axis"] == by_label[label]["input"]  # analog travel, not just pressed
+    fin, bumper = QRectF(*[by_label["LT"][k] for k in ("col", "row", "w", "h")]), _rect(by_label["LB"])
+    assert fin.bottom() <= bumper.top()  # the fin stands above the bumper, as it is drawn
+    assert _rect(by_label["RT"]).left() > fin.right() and _rect(by_label["RB"]).left() > bumper.right()
