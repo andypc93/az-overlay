@@ -272,3 +272,50 @@ def test_elite_paddles_are_controller_inputs():
         assert overlay.input_matches(overlay.parse_input(f"gp:paddle{n}"), {f"gp:paddle{n}"})
         assert overlay.GAMEPAD_LABELS[f"gp:paddle{n}"] == f"P{n}"
         assert gamepad.BUTTONS[f"paddle{n}"] == f"CONTROLLER_BUTTON_PADDLE{n}"
+
+
+# ---- release 1.0: config recovery -------------------------------------------------
+def _isolate_config(tmp_path, monkeypatch):
+    monkeypatch.setattr(overlay, "CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setattr(overlay, "PROFILE_DIR", str(tmp_path / "profiles"))
+
+
+def test_missing_config_is_a_first_run_not_an_error(tmp_path, monkeypatch):
+    _isolate_config(tmp_path, monkeypatch)
+    cfg = overlay.load_config()
+    assert cfg["theme"] == "dark"
+    assert cfg["hotkeys"]["toggle"] == "O"
+    assert cfg["profile"]  # a layout was seeded and selected
+    assert overlay.RECOVERED_CONFIG_BACKUP is None
+    assert not (tmp_path / "config.json").exists()  # load never writes config.json
+
+
+@pytest.mark.parametrize("bad", ['{"theme": "light",', "[1, 2, 3]", ""])
+def test_corrupt_config_is_backed_up_and_defaults_used(bad, tmp_path, monkeypatch):
+    _isolate_config(tmp_path, monkeypatch)
+    (tmp_path / "config.json").write_text(bad, encoding="utf-8")
+    cfg = overlay.load_config()
+    assert cfg["theme"] == "dark"
+    assert cfg["profile"]
+    backup = tmp_path / "config.json.bak"
+    assert backup.read_text(encoding="utf-8") == bad
+    assert overlay.RECOVERED_CONFIG_BACKUP == str(backup)
+
+
+def test_corrupt_config_leaves_saved_layouts_alone(tmp_path, monkeypatch):
+    good = overlay.load_config()
+    _isolate_config(tmp_path, monkeypatch)
+    overlay.save_profile("Keep me", good)
+    (tmp_path / "config.json").write_text("not json", encoding="utf-8")
+    cfg = overlay.load_config()
+    assert cfg["profile"] == "Keep me"
+    assert overlay.list_profiles() == ["Keep me"]
+
+
+def test_backup_flag_resets_on_a_clean_load(tmp_path, monkeypatch):
+    _isolate_config(tmp_path, monkeypatch)
+    (tmp_path / "config.json").write_text("{", encoding="utf-8")
+    overlay.load_config()
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    overlay.load_config()
+    assert overlay.RECOVERED_CONFIG_BACKUP is None

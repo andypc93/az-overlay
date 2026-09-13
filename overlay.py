@@ -14,6 +14,7 @@ Ctrl+Alt+E toggles Edit on screen, Ctrl+Alt+Q quits (editable in config).
 
 import ctypes
 import json
+import logging
 import math
 import os
 import queue
@@ -44,6 +45,12 @@ else:
 CONFIG_PATH = os.path.join(_BASE, "config.json")
 PROFILE_DIR = os.path.join(_BASE, "profiles")
 LOGO_PATH = os.path.join(_DEFAULTS, "assets", "logo_256.png")
+CONFIG_BACKUP_SUFFIX = ".bak"
+# Set by load_config() when config.json was unreadable and moved aside; main()
+# tells the user once. None after a clean load.
+RECOVERED_CONFIG_BACKUP = None
+
+_log = logging.getLogger("az.config")
 
 
 def ensure_user_data():
@@ -329,13 +336,38 @@ def seed_default_layouts():
     save_profile(DEFAULT_LAYOUT_NAME, prof)
 
 
+def _read_config_file():
+    """config.json as a dict. Missing file: first run, empty dict. Unreadable or not
+    an object: copy it to config.json.bak so nothing is lost, log it, empty dict."""
+    global RECOVERED_CONFIG_BACKUP
+    RECOVERED_CONFIG_BACKUP = None
+    if not os.path.exists(CONFIG_PATH):
+        _log.info("No config.json at %s: first run", CONFIG_PATH)
+        return {}
+    try:
+        with open(CONFIG_PATH, encoding="utf-8") as f:
+            raw = json.load(f)
+        if not isinstance(raw, dict):
+            raise ValueError(f"top level is {type(raw).__name__}, expected an object")
+        return raw
+    except (OSError, ValueError) as e:
+        backup = CONFIG_PATH + CONFIG_BACKUP_SUFFIX
+        try:
+            shutil.copy(CONFIG_PATH, backup)
+            RECOVERED_CONFIG_BACKUP = backup
+            _log.warning("config.json unreadable (%s); copied to %s and using defaults", e, backup)
+        except OSError as copy_err:
+            _log.error("config.json unreadable (%s) and could not be backed up: %s", e, copy_err)
+        return {}
+
+
 def load_config():
-    """Globals from config.json plus the current layout from its file. A layout
-    always exists: a missing one falls back to the first on disk, an empty
+    """Globals from config.json plus the current layout from its file. A missing or
+    unreadable config.json means defaults (the bad file is kept as config.json.bak).
+    A layout always exists: a missing one falls back to the first on disk, an empty
     layouts folder is re-seeded, and layout data left in an old config.json is
     recovered into its own layout once. Never writes config.json itself."""
-    with open(CONFIG_PATH, encoding="utf-8") as f:
-        raw = json.load(f)
+    raw = _read_config_file()
     stale = {k: raw[k] for k in PROFILE_KEYS if k in raw}
     cfg = {k: v for k, v in raw.items() if k not in PROFILE_KEYS}
     if cfg.get("theme") not in ("dark", "light"):
