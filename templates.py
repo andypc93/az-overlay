@@ -459,17 +459,18 @@ def xbox_profile(elite=False):
         _circle(200, 104, 17, "ⓧ", "gp:guide"),
         _u(150, 132, 28, 18, label="View", input="gp:back"),
         _u(222, 132, 28, 18, label="Menu", input="gp:start"),
-        _u(184, 166, 32, 16, label="Profile", input="") if elite
-        else _u(184, 166, 32, 16, label="Share", input="gp:misc1"),
+        _u(184, 156, 32, 16, label="Profile", input="") if elite
+        else _u(184, 156, 32, 16, label="Share", input="gp:misc1"),
         _circle(306, 100, 16, "Y", "gp:y"),
         _circle(276, 134, 16, "X", "gp:x"),
         _circle(336, 134, 16, "B", "gp:b"),
         _circle(306, 168, 16, "A", "gp:a"),
     ]
+    # Sticks draw their ring at 0.3 of the box, so the boxes are wider than the pads around them.
     sticks = [
-        _u(60, 108, 64, 64, label="L", axes=["gp:leftx", "gp:lefty"], click="gp:leftstick"),
-        _u(120, 180, 52, 52, label="", up="gp:dpup", down="gp:dpdown", left="gp:dpleft", right="gp:dpright"),
-        _u(224, 174, 64, 64, label="R", axes=["gp:rightx", "gp:righty"], click="gp:rightstick"),
+        _u(42, 84, 96, 96, label="L", axes=["gp:leftx", "gp:lefty"], click="gp:leftstick"),
+        _u(110, 180, 76, 76, label="", up="gp:dpup", down="gp:dpdown", left="gp:dpleft", right="gp:dpright"),
+        _u(204, 178, 80, 80, label="R", axes=["gp:rightx", "gp:righty"], click="gp:rightstick"),
     ]
     decor = [_u(0, 0, 400, 372, kind="xbox_front")]
     if elite:
