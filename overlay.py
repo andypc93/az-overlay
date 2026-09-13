@@ -466,6 +466,9 @@ def key_text_rect(rect, shape="rect"):
     area = rect.adjusted(3, 2, -3, -2)
     if shape.startswith("mouse_"):  # the label sits under the domed top
         area.adjust(0, area.height() * 0.3, 0, 0)
+    if shape in ("paddle_l", "paddle_r"):  # label sits in the pill's waist
+        side = min(area.width(), area.height())
+        return QRectF(area.center().x() - side / 2, area.center().y() - side / 2, side, side)
     if shape == "circle":
         inset_x = area.width() * (1 - 2 ** -0.5) / 2
         inset_y = area.height() * (1 - 2 ** -0.5) / 2
@@ -532,13 +535,57 @@ def shape_path(rect, shape, radius):
         path.addEllipse(rect)
     elif shape.startswith("mouse_"):
         path = mouse_button_path(rect, left=shape.startswith("mouse_left"), full=shape.endswith("_full"))
+    elif shape in ("paddle_l", "paddle_r"):  # pill tilted 18° away from the controller's centre line
+        r = min(rect.width(), rect.height()) / 2
+        pill = QPainterPath()
+        pill.addRoundedRect(rect, r, r)
+        cx, cy = rect.center().x(), rect.center().y()
+        t = QTransform().translate(cx, cy).rotate(-18 if shape == "paddle_l" else 18).translate(-cx, -cy)
+        path = t.map(pill)
     else:
         path.addRoundedRect(rect, radius, radius)
     return path
 
 
+# Xbox body outline, authored in a 400 x 372 unit frame
+# (docs/superpowers/specs/2026-09-13-xbox-silhouette-design.md).
+XBOX_BODY = [
+    ("M", (88, 88)),
+    ("C", (130, 58), (270, 58), (312, 88)),      # top edge
+    ("C", (350, 100), (372, 130), (380, 172)),   # right shoulder
+    ("C", (392, 230), (372, 300), (352, 340)),   # right grip, outer
+    ("C", (340, 362), (300, 362), (288, 340)),   # right grip, bottom
+    ("C", (272, 312), (262, 284), (250, 258)),   # right grip, inner
+    ("C", (236, 240), (164, 240), (150, 258)),   # crotch
+    ("C", (138, 284), (128, 312), (112, 340)),   # left grip, inner
+    ("C", (100, 362), (60, 362), (48, 340)),     # left grip, bottom
+    ("C", (28, 300), (8, 230), (20, 172)),       # left grip, outer
+    ("C", (28, 130), (50, 100), (88, 88)),       # left shoulder
+]
+XBOX_FRAME = (400.0, 372.0)
+XBOX_BACK_GHOSTS = [(70, 30, 64, 22), (266, 30, 64, 22), (70, 60, 64, 18), (266, 60, 64, 18)]  # triggers, bumpers
+
+
+def _xbox_body(rect):
+    """The body path scaled into rect, plus the unit -> pixel factors."""
+    sx, sy = rect.width() / XBOX_FRAME[0], rect.height() / XBOX_FRAME[1]
+
+    def pt(p):
+        return QPointF(rect.x() + p[0] * sx, rect.y() + p[1] * sy)
+
+    path = QPainterPath()
+    for op, *pts in XBOX_BODY:
+        if op == "M":
+            path.moveTo(pt(pts[0]))
+        else:
+            path.cubicTo(pt(pts[0]), pt(pts[1]), pt(pts[2]))
+    path.closeSubpath()
+    return path, sx, sy
+
+
 def decor_path(kind, rect):
-    """Silhouette drawn behind the pads. "mouse": domed top, straight flanks, rounded tail."""
+    """Silhouette drawn behind the pads. "mouse": domed top, straight flanks, rounded tail.
+    "xbox_front" / "xbox_back": the controller body; the back adds faint trigger and bumper ghosts."""
     x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
     path = QPainterPath()
     if kind == "mouse":
@@ -550,6 +597,11 @@ def decor_path(kind, rect):
         path.lineTo(x + rb, y + h)
         path.arcTo(x, y + h - 2 * rb, 2 * rb, 2 * rb, 270, -90)
         path.closeSubpath()
+    elif kind in ("xbox_front", "xbox_back"):
+        path, sx, sy = _xbox_body(rect)
+        if kind == "xbox_back":
+            for gx, gy, gw, gh in XBOX_BACK_GHOSTS:
+                path.addRoundedRect(QRectF(x + gx * sx, y + gy * sy, gw * sx, gh * sy), 6 * sx, 6 * sy)
     else:
         path.addRoundedRect(rect, w * 0.1, w * 0.1)
     return path
