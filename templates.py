@@ -452,32 +452,33 @@ def _circle(cx, cy, r, label, inp):
 def xbox_profile(elite=False):
     """Xbox Wireless, or Elite Series 2 with a second body for the four rear paddles."""
     keys = [
-        _u(70, 30, 64, 22, label="LT", axis="gp:lefttrigger", input="gp:lefttrigger"),
-        _u(266, 30, 64, 22, label="RT", axis="gp:righttrigger", input="gp:righttrigger"),
-        _u(70, 60, 64, 18, label="LB", input="gp:leftshoulder"),
-        _u(266, 60, 64, 18, label="RB", input="gp:rightshoulder"),
-        _circle(200, 104, 17, "ⓧ", "gp:guide"),
-        _u(150, 132, 28, 18, label="View", input="gp:back"),
-        _u(222, 132, 28, 18, label="Menu", input="gp:start"),
-        _u(184, 156, 32, 16, label="Profile", input="") if elite
-        else _u(184, 156, 32, 16, label="Share", input="gp:misc1"),
-        _circle(306, 100, 16, "Y", "gp:y"),
-        _circle(276, 134, 16, "X", "gp:x"),
-        _circle(336, 134, 16, "B", "gp:b"),
-        _circle(306, 168, 16, "A", "gp:a"),
+        _u(60, 12, 64, 22, label="LT", axis="gp:lefttrigger", input="gp:lefttrigger"),
+        _u(276, 12, 64, 22, label="RT", axis="gp:righttrigger", input="gp:righttrigger"),
+        _u(60, 44, 64, 18, label="LB", input="gp:leftshoulder"),   # sits on the bumper hump
+        _u(276, 44, 64, 18, label="RB", input="gp:rightshoulder"),
+        _circle(200, 74, 18, "ⓧ", "gp:guide"),
+        _u(150, 120, 30, 18, label="View", input="gp:back"),
+        _u(220, 120, 30, 18, label="Menu", input="gp:start"),
+        _u(186, 144, 28, 14, label="Profile", input="") if elite
+        else _u(186, 144, 28, 14, label="Share", input="gp:misc1"),
+        _circle(306, 98, 15, "Y", "gp:y"),
+        _circle(275, 129, 15, "X", "gp:x"),
+        _circle(337, 129, 15, "B", "gp:b"),
+        _circle(306, 160, 15, "A", "gp:a"),
     ]
-    # Sticks draw their ring at 0.3 of the box, so the boxes are wider than the pads around them.
+    # Sticks draw their ring at 0.3 of the box, so the boxes overlap their neighbours; the rings do not.
     sticks = [
-        _u(42, 84, 96, 96, label="L", axes=["gp:leftx", "gp:lefty"], click="gp:leftstick"),
-        _u(110, 180, 76, 76, label="", up="gp:dpup", down="gp:dpdown", left="gp:dpleft", right="gp:dpright"),
-        _u(204, 178, 80, 80, label="R", axes=["gp:rightx", "gp:righty"], click="gp:rightstick"),
+        _u(40, 80, 100, 100, label="L", axes=["gp:leftx", "gp:lefty"], click="gp:leftstick"),
+        _u(96, 152, 96, 96, label="", up="gp:dpup", down="gp:dpdown", left="gp:dpleft", right="gp:dpright"),
+        _u(210, 152, 96, 96, label="R", axes=["gp:rightx", "gp:righty"], click="gp:rightstick"),
     ]
     decor = [_u(0, 0, 400, 372, kind="xbox_front")]
     if elite:
         bx = XBOX_BACK_COL * XBOX_CELL
         decor.append(_u(bx, 0, 400, 372, kind="xbox_back"))
-        for label, cx, cy, w, h, shape in (("P1", 168, 268, 20, 70, "paddle_l"), ("P2", 128, 302, 18, 50, "paddle_l"),
-                                           ("P3", 232, 268, 20, 70, "paddle_r"), ("P4", 272, 302, 18, 50, "paddle_r")):
+        # Paddles hang from the lower back between the grips, as on the real controller.
+        for label, cx, cy, w, h, shape in (("P1", 170, 262, 20, 66, "paddle_l"), ("P2", 132, 282, 18, 48, "paddle_l"),
+                                           ("P3", 230, 262, 20, 66, "paddle_r"), ("P4", 268, 282, 18, 48, "paddle_r")):
             keys.append(_u(bx + cx - w / 2, cy - h / 2, w, h, label=label, shape=shape,
                            input=f"gp:paddle{label[1]}", editable=True))
     return {

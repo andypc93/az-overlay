@@ -95,7 +95,12 @@ def test_elite_back_body_holds_four_editable_paddles():
 @pytest.mark.parametrize("elite", [False, True])
 def test_xbox_pads_do_not_overlap(elite):
     prof = templates.xbox_profile(elite)
-    rects = [_rect(k) for k in prof["keys"]] + [_rect(s, 2) for s in prof["sticks"]]
+    # A stick draws its ring at 0.3 of its box from the centre; only the ring must stay clear of the pads.
+    rects = [_rect(k) for k in prof["keys"]]
+    for s in prof["sticks"]:
+        box = _rect(s, 2)
+        inset = box.width() * 0.2
+        rects.append(box.adjusted(inset, inset, -inset, -inset))
     for i, a in enumerate(rects):
         for b in rects[i + 1:]:
             assert not a.intersects(b.adjusted(0.01, 0.01, -0.01, -0.01))
