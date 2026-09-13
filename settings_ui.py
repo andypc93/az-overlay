@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+import time
 from math import ceil
 
 from PySide6.QtCore import QEvent, QItemSelectionModel, QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QUrl, QUrlQuery, Property, Signal
@@ -17,10 +18,11 @@ from PySide6.QtWidgets import (
 import templates
 from gamepad import is_gamepad_input
 from version import __version__
-from overlay import (APP_NAME, DEFAULT_COLORS, GAMEPAD_LABELS, PAD_STYLES, PROFILE_KEYS, STICK_STYLES, delete_profile,
+from overlay import (APP_NAME, DEFAULT_COLORS, GAMEPAD_LABELS, PAD_STYLES, PRESS_ANIMS, PROFILE_KEYS, STICK_STYLES,
+                     delete_profile,
                      create_profile, layout_name_taken, pads_in_row_or_column, rename_profile, sanitise_layout_name,
                      seed_default_layouts,
-                     KEY_TEXT_FLAGS, draw_pad, fit_key_font, key_text_rect,
+                     KEY_TEXT_FLAGS, PRESS_FADE_MS, draw_pad, fit_key_font, key_text_rect,
                      label_for_token, list_profiles, load_profile, migrate, pad_inputs, parse_input,
                      save_config, save_profile, vks_for_label)
 
@@ -28,6 +30,16 @@ SUPPORT_EMAIL = "andres6perez@gmail.com"
 # Display names for overlay.STICK_STYLES, in the same order.
 STICK_STYLE_NAMES = dict(zip(STICK_STYLES, ("Classic", "Ring gauge", "Petals", "Vector", "Key cross")))
 PAD_STYLE_NAMES = dict(zip(PAD_STYLES, ("Classic", "Outline", "Keycap", "Underline", "Pill")))
+# Display names for overlay.PRESS_ANIMS, in the same order, and what each one does.
+PRESS_ANIM_NAMES = dict(zip(PRESS_ANIMS, ("Classic", "Spring", "Ripple", "Burst", "Ember", "Strike")))
+PRESS_ANIM_HINTS = {
+    "classic": "Lights the moment the key goes down and fades out on release.",
+    "spring": "The pad squashes while held and springs back with a small overshoot.",
+    "ripple": "A ring travels out from the middle of the pad on every press.",
+    "burst": "The pad pops and throws a ring of sparks, then sits lit while held.",
+    "ember": "The glow blooms wide on release and dies out slowly, like a cooling coil.",
+    "strike": "The press flashes bright and settles into the pressed color.",
+}
 PAD_SHAPES = (("rect", "Rounded"), ("circle", "Circle"))
 # Set these to the creator's payment links to enable donations.
 PAYPAL_DONATION_URL = ""
@@ -423,13 +435,42 @@ class ColorButton(QPushButton):
             self.on_change()
 
 
+PREVIEW_CYCLE_S = 1.8  # the demo key presses, holds, releases, settles, then repeats
+PREVIEW_HOLD_S = 0.8
+
+
+def preview_press_state(anim, phase):
+    """The demo key `phase` seconds into its loop: (level, down, press_t, release_t)."""
+    fade = PRESS_FADE_MS.get(anim, 140) / 1000
+    if phase < PREVIEW_HOLD_S:
+        return 1.0, True, phase, None
+    rel = phase - PREVIEW_HOLD_S
+    return max(0.0, 1.0 - rel / fade), False, PREVIEW_HOLD_S + rel, rel
+
+
 class PadPreview(QWidget):
-    """Two sample keys, idle and pressed, drawn with the live config."""
+    """Two sample keys, idle and pressed, drawn with the live config. With a press
+    animation chosen, the pressed sample plays it on a loop so it can be judged."""
 
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
         self.setFixedHeight(160)
+        self._phase = 0.0
+        self._last = time.monotonic()
+        self._timer = QTimer(self)
+        self._timer.setInterval(16)
+        self._timer.timeout.connect(self._advance)
+        self._timer.start()
+
+    def _advance(self):
+        now = time.monotonic()
+        dt, self._last = now - self._last, now
+        if self.cfg.get("press_anim", "classic") == "classic" or not self.isVisible():
+            self._phase = 0.0
+            return
+        self._phase = (self._phase + dt) % PREVIEW_CYCLE_S
+        self.update()
 
     def paintEvent(self, _e):
         c = {k: QColor(v) for k, v in self.cfg["colors"].items()}
@@ -455,8 +496,16 @@ class PadPreview(QWidget):
         p.drawRoundedRect(QRectF(self.rect()), 14, 14)
         shape = "circle" if self.cfg.get("shape") == "circle" else "rect"
         style = self.cfg.get("pad_style", "classic")
+        anim = self.cfg.get("press_anim", "classic")
+        base = float(self.cfg.get("opacity", 0.85))
         for x, state in ((x0, "idle"), (x0 + w + gap, "pressed")):
             rect = QRectF(x, y0, w, h)
+            if state == "idle":
+                level, down, press_t, release_t = 0.0, False, None, None
+            elif anim == "classic":
+                level, down, press_t, release_t = 1.0, False, None, None
+            else:
+                level, down, press_t, release_t = preview_press_state(anim, self._phase)
             # The overlay paints idle pads at the chosen opacity and lit pads solid: show the same here.
             # The idle sample is painted into an image first so its label does not compound over its tile.
             dpr = self.devicePixelRatio()
@@ -465,13 +514,13 @@ class PadPreview(QWidget):
             sample.fill(Qt.GlobalColor.transparent)
             sp = QPainter(sample)
             sp.setRenderHint(QPainter.RenderHint.Antialiasing)
-            label_color = draw_pad(sp, rect, shape, style, r, c, 1.0 if state == "pressed" else 0.0)
+            label_color = draw_pad(sp, rect, shape, style, r, c, level, anim, down, press_t, release_t)
             text_rect = key_text_rect(rect, shape)
             sp.setFont(fit_key_font("Space", font, text_rect, self))
             sp.setPen(label_color)
             sp.drawText(text_rect, KEY_TEXT_FLAGS, "Space")
             sp.end()
-            p.setOpacity(1.0 if state == "pressed" else float(self.cfg.get("opacity", 0.85)))
+            p.setOpacity(base + (1.0 - base) * level)  # as the overlay does: a lit pad rises to solid
             p.drawImage(QPointF(0, 0), sample)
             p.setOpacity(1.0)
             p.setFont(QFont("Segoe UI", 8))
@@ -1509,7 +1558,18 @@ class SettingsWindow(QWidget):
         self.pad_style_combo.currentIndexChanged.connect(
             lambda _i: self._set("pad_style", self.pad_style_combo.currentData()))
         f_pads.addRow("Style", self.pad_style_combo)
+        self.press_anim_combo = QComboBox()
+        for key in PRESS_ANIMS:
+            self.press_anim_combo.addItem(PRESS_ANIM_NAMES[key], key)
+            self.press_anim_combo.setItemData(PRESS_ANIMS.index(key), PRESS_ANIM_HINTS[key], Qt.ItemDataRole.ToolTipRole)
+        self.press_anim_combo.setCurrentIndex(PRESS_ANIMS.index(self.cfg.get("press_anim", "classic")))
+        self.press_anim_combo.setMinimumWidth(160)
+        self.press_anim_combo.setAccessibleName("Press animation")
+        self.press_anim_combo.currentIndexChanged.connect(self._press_anim_changed)
+        f_pads.addRow("Press", self.press_anim_combo)
+        self.press_anim_hint = muted(PRESS_ANIM_HINTS[self.cfg.get("press_anim", "classic")])
         l_pads.addLayout(f_pads)
+        l_pads.addWidget(self.press_anim_hint)
 
         c3, l3 = card()
         l3.addWidget(section("Sticks"))
@@ -1710,6 +1770,11 @@ class SettingsWindow(QWidget):
         self._undo = None
         if hasattr(self, "undo_bar"):
             self.undo_bar.hide()
+
+    def _press_anim_changed(self, _i):
+        key = self.press_anim_combo.currentData()
+        self.press_anim_hint.setText(PRESS_ANIM_HINTS[key])
+        self._set("press_anim", key)
 
     def _set(self, key, val):
         if self._loading:

@@ -28,6 +28,12 @@ pads table and the visual layout.
 As deletion targets: every pad whose centre on that axis lies within the selected
 pad's span on that axis. Not a fixed integer band.
 
+**Press animation**:
+What a pad does at the moment it is pressed and released, chosen under Pads on
+Appearance and saved with the layout. Separate from Pad style, which is how a pad
+is drawn at rest. In the UI the row is labelled "Press".
+_Avoid_: Effect, transition, feedback
+
 **Edit on screen**:
 The overlay's edit mode: drag to move, scroll to resize, click a pad to rebind.
 _Avoid_: Move mode, unlock

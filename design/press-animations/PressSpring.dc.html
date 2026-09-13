@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #000000; color: #f5f5f7; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 13.33px; }
+    a { color: #b6ff00; text-decoration: none; } a:hover { color: #ceff59; }
+    * { box-sizing: border-box; }
+    .pad {
+      position: relative; width: 100px; height: 140px; border-radius: 10px;
+      background: #1e1e1e; color: #ffffff; box-shadow: 0 0 0 1.2px #c9d400;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 17.33px; line-height: 1;
+      cursor: pointer; user-select: none; -webkit-user-select: none; touch-action: none;
+      transition: background-color 140ms linear, color 140ms linear, box-shadow 140ms linear;
+    }
+    .pad.is-down { background: #c9d400; color: #000000; box-shadow: 0 0 0 2.2px #c9d400, 0 0 0 3px rgba(201, 212, 0, 0.09), 0 0 0 6px rgba(201, 212, 0, 0.18); transition-duration: 0ms; }
+    .label { position: relative; z-index: 1; }
+
+    .pad.is-down { transform: scale(.93, .9); transition: transform 60ms ease-out, background-color 0ms, color 0ms, box-shadow 0ms; }
+    .pad.is-up { animation: spring .55s linear both; }
+    @keyframes spring {
+      0%   { transform: scale(.93, .90); }
+      45%  { transform: scale(1.06, 1.08); }
+      75%  { transform: scale(.985, .99); }
+      100% { transform: scale(1, 1); }
+    }
+  </style>
+</helmet>
+<div style="width: 560px; height: 300px; background: #0c0c0e; position: relative; overflow: hidden; display: flex; flex-direction: column;"><div style="height: 236px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;"><div class="pad {{ cls }}" onPointerDown="{{ down }}" onPointerUp="{{ up }}" onPointerLeave="{{ up }}" onPointerCancel="{{ up }}"><span class="label">Space</span></div><div style="color: #a1a1a6; font-size: 10.67px;">hold or tap</div></div><div style="display: flex; flex-direction: column; gap: 3px; padding: 0 20px 14px 20px;"><div style="font-size: 14.67px; font-weight: 600;">Spring</div><div style="color: #a1a1a6; font-size: 10.67px;">The pad squashes while held and springs back with a small overshoot on release. Trade-off: movement can distract on dense layouts.</div></div></div>
+</x-dc>
+<script data-dc-script data-props='{"$preview": {"width": 560, "height": 300}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { phase: 'idle', burst: false };
+    this.t = null;
+    this.tb = null;
+  }
+  componentWillUnmount() {
+    clearTimeout(this.t);
+    clearTimeout(this.tb);
+  }
+  renderVals() {
+    const ph = this.state.phase;
+    return {
+      cls: ph === 'down' ? 'is-down' : ph === 'up' ? 'is-up' : '',
+      burst: this.state.burst,
+      down: (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        clearTimeout(this.t);
+        clearTimeout(this.tb);
+        this.setState({ phase: 'down', burst: true });
+        this.tb = setTimeout(() => this.setState({ burst: false }), 720);
+      },
+      up: () => {
+        if (this.state.phase !== 'down') return;
+        this.setState({ phase: 'up' });
+        clearTimeout(this.t);
+        this.t = setTimeout(() => this.setState({ phase: 'idle' }), 560);
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -118,7 +118,20 @@ always stays inside its pad, including on round buttons.
 
 Under **Pads**, pick the shape (rounded or circle) and a style: **Classic**,
 **Outline** (see-through until pressed), **Keycap** (raised face), **Underline**
-(flat tile with a status bar), or **Pill**. Under **Sticks**, choose how
+(flat tile with a status bar), or **Pill**.
+
+**Press** sets what a pad does at the moment it is hit. **Classic** lights it
+instantly and fades it out on release, as earlier versions did. **Spring**
+squashes the pad while it is held and springs it back with a small overshoot.
+**Ripple** sends a ring out from the middle of the pad on each press.
+**Burst** pops the pad and scatters sparks across its face. **Ember** blooms
+the glow on release and lets it die out slowly, so a tap leaves a trace.
+**Strike** flashes bright on impact and settles into the pressed color. The
+preview plays the one you choose on a loop. Every animation works with every
+pad style, shape, and color, and effects stay close to the pad so they are
+not clipped at the edge of the overlay window.
+
+Under **Sticks**, choose how
 thumbsticks and d-pads are drawn: **Classic**, **Ring gauge**, **Petals**,
 **Vector**, or **Key cross**, and whether a box is drawn behind each stick. All
 of it is saved with the layout.

@@ -77,10 +77,15 @@ def ensure_user_data():
 
 # What a saved layout profile carries (hotkeys and app theme stay global).
 PROFILE_KEYS = ("x", "y", "scale", "opacity", "cell_w", "cell_h", "gap", "shape",
-                "pad_style", "stick_style", "stick_box", "colors", "font", "keys", "sticks", "decor", "locked")
+                "pad_style", "press_anim", "stick_style", "stick_box", "colors", "font", "keys", "sticks",
+                "decor", "locked")
 
 # How keys and buttons are drawn; the idle/pressed colors apply to every style.
 PAD_STYLES = ("classic", "outline", "keycap", "underline", "pill")
+
+# What a pad does at the moment it is pressed and released. "classic" is the original
+# instant-on, linear-fade behaviour; the rest add motion or a mark on top of it.
+PRESS_ANIMS = ("classic", "spring", "ripple", "burst", "ember", "strike")
 
 # How sticks and d-pads are drawn. "classic" is the ring-and-dots look from the first versions.
 STICK_STYLES = ("classic", "ring", "petals", "vector", "keys")
@@ -283,6 +288,8 @@ def migrate(cfg):
     cfg.setdefault("shape", "rect")
     if cfg.get("pad_style") not in PAD_STYLES:
         cfg["pad_style"] = "classic"
+    if cfg.get("press_anim") not in PRESS_ANIMS:
+        cfg["press_anim"] = "classic"
     if cfg.get("stick_style") not in STICK_STYLES:
         cfg["stick_style"] = "classic"
     cfg["stick_box"] = bool(cfg.get("stick_box", True))
@@ -699,21 +706,161 @@ def decor_path(kind, rect):
     return path
 
 
-def draw_pad(p, rect, shape, style, radius, c, t):
+# ---------------------------------------------------------------------------
+# Press animations. Every pad carries two clocks, in seconds: press_t since the key
+# last went down and release_t since it last came up (None before the first press,
+# or while the key is held). An animation reads only those clocks and the pad's
+# rectangle, so each one works with every pad style, shape, and color set.
+# ---------------------------------------------------------------------------
+PRESS_FADE_MS = {"ember": 650}  # release fade per animation; the rest use Overlay.FADE_MS
+SPRING_S = 0.55       # release spring
+SPRING_HOLD = (0.93, 0.90)  # how far the body squashes while the key is held
+SPRING_DOWN_S = 0.06  # time taken to reach that squash
+RIPPLE_S = 0.60       # ring travelling out to the pad edge
+BURST_S = 0.70        # sparks
+BURST_POP_S = 0.45    # the pop that goes with them
+BURST_SPARKS = 10
+EMBER_S = 0.65        # glow bloom after release
+STRIKE_S = 0.22       # flash settling into the pressed color
+# (fraction of the animation, x scale, y scale)
+SPRING_KEYS = ((0.0, 0.93, 0.90), (0.45, 1.06, 1.08), (0.75, 0.985, 0.99), (1.0, 1.0, 1.0))
+BURST_KEYS = ((0.0, 1.0), (0.35, 0.95), (0.70, 1.05), (1.0, 1.0))
+
+
+def _ease(u):
+    """Smoothstep on 0..1, so keyframe segments meet without a visible corner."""
+    u = max(0.0, min(1.0, u))
+    return u * u * (3 - 2 * u)
+
+
+def _keyframes(keys, u):
+    """Interpolate a keyframe table at u (0..1). Each row is (at, value, ...)."""
+    u = max(0.0, min(1.0, u))
+    for a, b in zip(keys, keys[1:]):
+        if u <= b[0]:
+            span = b[0] - a[0]
+            k = _ease((u - a[0]) / span) if span > 0 else 1.0
+            return tuple(av + (bv - av) * k for av, bv in zip(a[1:], b[1:]))
+    return tuple(keys[-1][1:])
+
+
+def press_anim_running(anim, press_t, release_t):
+    """True while `anim` still has something to draw, so the overlay keeps repainting."""
+    if anim == "spring":
+        return release_t is not None and release_t < SPRING_S
+    if anim == "ripple":
+        return press_t is not None and press_t < RIPPLE_S
+    if anim == "burst":
+        return press_t is not None and press_t < BURST_S
+    if anim == "ember":
+        return release_t is not None and release_t < EMBER_S
+    if anim == "strike":
+        return press_t is not None and press_t < STRIKE_S
+    return False
+
+
+def press_anim_margin(anim, rect):
+    """How far past the pad this animation paints, in px. The overlay repaints that much
+    extra around a lit pad; keeping it small is what stops effects clipping at the edge."""
+    if anim == "ember":
+        return 14.0
+    if anim == "burst":
+        return max(10.0, min(rect.width(), rect.height()) * 0.12)
+    if anim == "spring":
+        return max(8.0, max(rect.width(), rect.height()) * 0.05)
+    return 8.0
+
+
+def press_scale(anim, down, press_t, release_t):
+    """Horizontal and vertical scale for the pad body at this point in the animation."""
+    if anim == "spring":
+        if down:
+            k = _ease(min(1.0, (press_t or 0.0) / SPRING_DOWN_S))
+            return 1 + (SPRING_HOLD[0] - 1) * k, 1 + (SPRING_HOLD[1] - 1) * k
+        if release_t is not None and release_t < SPRING_S:
+            return _keyframes(SPRING_KEYS, release_t / SPRING_S)
+    elif anim == "burst" and press_t is not None and press_t < BURST_POP_S:
+        s = _keyframes(BURST_KEYS, press_t / BURST_POP_S)[0]
+        return s, s
+    return 1.0, 1.0
+
+
+def _draw_press_glow(p, body, c, t, anim, release_t):
+    """The soft halo behind a lit key. Ember replaces it with a bloom that widens and
+    dies out after release, so a quick tap still leaves a trace."""
+    rings = [(6.0, 0.18 * t), (3.0, 0.09 * t)]
+    if anim == "ember" and release_t is not None and release_t < EMBER_S:
+        u = release_t / EMBER_S
+        k = (1 - u) ** 1.6
+        rings = [(6 + 6 * u, 0.24 * k), (3 + 3 * u, 0.13 * k)]
+    glow = QColor(c["pressed_outline"])
+    p.save()
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    for spread, alpha in rings:
+        if alpha <= 0.004:
+            continue
+        glow.setAlphaF(min(1.0, alpha))
+        p.setPen(QPen(glow, spread * 2))
+        p.drawPath(body)
+    p.restore()
+
+
+def _draw_press_marks(p, rect, body, c, anim, press_t):
+    """Marks painted over the body: the ripple's ring and the burst's sparks."""
+    if press_t is None:
+        return
+    p.save()
+    if anim == "ripple" and press_t < RIPPLE_S:
+        u = press_t / RIPPLE_S
+        rad = math.hypot(rect.width(), rect.height()) / 2 * (0.12 + 0.88 * _ease(u))
+        # drawn in the label color: a pressed pad is filled with pressed_fill, and pressed_text
+        # is the one color the user has already chosen to be legible on top of it
+        ring = QColor(c["pressed_text"])
+        ring.setAlphaF(0.6 * (1 - u) ** 1.4)
+        p.setClipPath(body)  # the ring stays inside the pad, so neighbours never overlap
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(ring, max(1.5, min(rect.width(), rect.height()) * 0.035)))
+        p.drawEllipse(rect.center(), rad, rad)
+    elif anim == "burst" and press_t < BURST_S:
+        u = press_t / BURST_S
+        rx, ry = rect.width() / 2, rect.height() / 2
+        # The sparks scatter across the face and die just past the rim: the overlay window is
+        # only a few px bigger than the pad grid, so anything thrown further would be clipped.
+        reach = 0.30 + 0.80 * _ease(u)
+        size = max(0.8, min(rx, ry) * 0.09 * (1 - u))
+        cx, cy = rect.center().x(), rect.center().y()
+        p.setPen(Qt.PenStyle.NoPen)
+        for i in range(BURST_SPARKS):
+            ang = 2 * math.pi * i / BURST_SPARKS
+            spark = QColor(c["pressed_text"] if i % 2 == 0 else c["idle_text"])  # legible on the lit fill
+            spark.setAlphaF(min(1.0, 2.4 * (1 - u) ** 1.1))
+            p.setBrush(QBrush(spark))
+            r = size if i % 2 == 0 else size * 0.7
+            p.drawEllipse(QPointF(cx + math.cos(ang) * rx * reach, cy + math.sin(ang) * ry * reach), r, r)
+    p.restore()
+
+
+def draw_pad(p, rect, shape, style, radius, c, t, anim="classic", down=False, press_t=None, release_t=None):
     """Paint the glow and body of one key at lit level t (0..1) in the given pad style.
+    `anim` and the two press clocks add the press animation on top (see PRESS_ANIMS).
     Shared by the overlay and the settings preview. Returns the color for its label."""
+    sx, sy = press_scale(anim, down, press_t, release_t)
+    if sx != 1.0 or sy != 1.0:
+        rect = QRectF(rect.center().x() - rect.width() * sx / 2, rect.center().y() - rect.height() * sy / 2,
+                      rect.width() * sx, rect.height() * sy)
+        radius *= min(sx, sy)
+    if anim == "strike" and press_t is not None and press_t < STRIKE_S:
+        k = 1.0 - _ease(press_t / STRIKE_S)  # 1 at the moment of impact, 0 once it has settled
+        c = dict(c)
+        c["pressed_fill"] = mix(c["pressed_fill"], c["pressed_fill"].lighter(190), k)
+        c["pressed_outline"] = mix(c["pressed_outline"], c["pressed_outline"].lighter(190), k)
     if style == "pill" and shape != "circle":
         radius = min(rect.width(), rect.height()) / 2
     outline = mix(c["idle_outline"], c["pressed_outline"], t)
     text = mix(c["idle_text"], c["pressed_text"], t)
     body = shape_path(rect, shape, radius)
-    if t > 0.02 and style != "underline":  # soft glow behind lit keys
-        glow = QColor(c["pressed_outline"])
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        for i, spread in enumerate((6, 3)):
-            glow.setAlphaF(0.18 * t / (i + 1))
-            p.setPen(QPen(glow, spread * 2))
-            p.drawPath(body)
+    if style != "underline":  # soft glow behind lit keys
+        _draw_press_glow(p, body, c, t, anim, release_t)
     if style == "outline":  # see-through until pressed
         fill = QColor(c["pressed_fill"])
         fill.setAlphaF(t)
@@ -745,6 +892,7 @@ def draw_pad(p, rect, shape, style, radius, c, t):
         p.setBrush(QBrush(mix(c["idle_fill"], c["pressed_fill"], t)))
         p.setPen(QPen(outline, 1.2 + t))
         p.drawPath(body)
+    _draw_press_marks(p, rect, body, c, anim, press_t)
     return text
 
 
@@ -760,6 +908,9 @@ class Pad:
         self.source = source  # ("key", index) or ("stick", index, "up"|"down"|"left"|"right")
         self.axis = axis  # analog input id whose value drives level (triggers)
         self.level = 0.0  # 0 idle .. 1 fully lit
+        self.down = False  # currently held, which is what starts and ends an animation
+        self.press_t = None  # seconds since this pad last went down (None before the first press)
+        self.release_t = None  # seconds since it last came up (None while held)
         self.text_pos = None
 
     def bound(self):
@@ -849,11 +1000,11 @@ class Overlay(QWidget):
                           QFont.Weight.Bold if fnt.get("bold", True) else QFont.Weight.Normal)
         self.col = {k: QColor(v) for k, v in cfg["colors"].items()}
 
-        old = {p.source: p.level for p in self.pads}
+        old = {p.source: (p.level, p.down, p.press_t, p.release_t) for p in self.pads}
         self.pads, self.sticks, self.decor = [], [], []
         self.build()
         for p in self.pads:
-            p.level = old.get(p.source, 0.0)
+            p.level, p.down, p.press_t, p.release_t = old.get(p.source, (0.0, False, None, None))
             if p.shape not in TEXT_SHAPES:
                 p.text_rect = key_text_rect(p.rect, p.shape)
                 p.font = fit_key_font(p.label, self.font, p.text_rect, self)
@@ -1036,8 +1187,10 @@ class Overlay(QWidget):
             lit = [(pad.rect, pad.level) for pad in self.pads if pad.level > 0.01]
             lit += [(st.rect, max(st.level, min(1.0, math.hypot(st.offset.x(), st.offset.y()))))
                     for st in self.sticks if max(st.level, math.hypot(st.offset.x(), st.offset.y())) > 0.01]
+            anim = self.cfg.get("press_anim", "classic")
             for rect, level in lit:
-                area = rect.adjusted(-8, -8, 8, 8)  # glow spills a few px past the pad
+                m = press_anim_margin(anim, rect)
+                area = rect.adjusted(-m, -m, m, m)  # glow and press marks spill past the pad
                 source = QRectF(area.x() * dpr, area.y() * dpr, area.width() * dpr, area.height() * dpr)
                 p.setOpacity(min(1.0, level))
                 p.drawImage(area, self._scene, source)
@@ -1051,6 +1204,7 @@ class Overlay(QWidget):
         style = self.cfg.get("stick_style", "classic")
         box = self.cfg.get("stick_box", True)
         pad_style = self.cfg.get("pad_style", "classic")
+        press_anim = self.cfg.get("press_anim", "classic")
 
         for kind, rect in self.decor:  # silhouettes sit behind everything, outlined faintly
             faint = QColor(c["idle_outline"])
@@ -1166,7 +1320,8 @@ class Overlay(QWidget):
 
             t = pad.level
             if pad.shape not in TEXT_SHAPES:  # keys, buttons and the key-cross directions
-                p.setPen(draw_pad(p, pad.rect, pad.shape, pad_style, self.radius, c, t))
+                p.setPen(draw_pad(p, pad.rect, pad.shape, pad_style, self.radius, c, t,
+                                  press_anim, pad.down, pad.press_t, pad.release_t))
                 p.setFont(pad.font)
                 p.drawText(pad.text_rect, KEY_TEXT_FLAGS, pad.label)
                 continue
@@ -1407,7 +1562,8 @@ class Overlay(QWidget):
         self._gp_pressed = gp_pressed
         self.axes = axes
 
-        step = dt * 1000 / self.FADE_MS
+        anim = self.cfg.get("press_anim", "classic")
+        step = dt * 1000 / PRESS_FADE_MS.get(anim, self.FADE_MS)
         dirty = False
         for pad in self.pads:
             if pad.axis:
@@ -1416,12 +1572,25 @@ class Overlay(QWidget):
                     pad.level = target
                     dirty = True
                 continue
-            down = input_matches(pad.alts, self.pressed)
+            if pad.press_t is not None and pad.press_t < 10:
+                pad.press_t += dt  # the clocks stop once every animation is long over
+            if pad.release_t is not None and pad.release_t < 10:
+                pad.release_t += dt
+            down = bool(input_matches(pad.alts, self.pressed))
+            if down != pad.down:
+                pad.down = down
+                if down:
+                    pad.press_t, pad.release_t = 0.0, None
+                else:
+                    pad.release_t = 0.0
+                dirty = True
             if down and pad.level < 1.0:
                 pad.level = 1.0  # instant on
                 dirty = True
             elif not down and pad.level > 0.0:
                 pad.level = max(0.0, pad.level - step)  # smooth off
+                dirty = True
+            if press_anim_running(anim, pad.press_t, pad.release_t):
                 dirty = True
         for st in self.sticks:
             if st.axes:

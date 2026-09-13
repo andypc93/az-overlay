@@ -1,0 +1,70 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Classic",
+      "x": 0,
+      "y": 0,
+      "w": 560,
+      "h": 300,
+      "is_interactive": true
+    },
+    {
+      "file": "PressSpring.dc.html",
+      "title": "Spring",
+      "x": 660,
+      "y": 0,
+      "w": 560,
+      "h": 300,
+      "is_interactive": true
+    },
+    {
+      "file": "PressRipple.dc.html",
+      "title": "Ripple",
+      "x": 1320,
+      "y": 0,
+      "w": 560,
+      "h": 300,
+      "is_interactive": true
+    },
+    {
+      "file": "PressBurst.dc.html",
+      "title": "Burst",
+      "x": 0,
+      "y": 440,
+      "w": 560,
+      "h": 300,
+      "is_interactive": true
+    },
+    {
+      "file": "PressEmber.dc.html",
+      "title": "Ember",
+      "x": 660,
+      "y": 440,
+      "w": 560,
+      "h": 300,
+      "is_interactive": true
+    },
+    {
+      "file": "PressStrike.dc.html",
+      "title": "Strike",
+      "x": 1320,
+      "y": 440,
+      "w": 560,
+      "h": 300,
+      "is_interactive": true
+    }
+  ],
+  "annotations": [
+    {
+      "id": "shipped",
+      "x": 0,
+      "y": -110,
+      "w": 700,
+      "text": "All six ship as the Press setting under Pads on Appearance.\nSame timings and distances as the app; hold or tap a pad to play it."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

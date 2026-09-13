@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #000000; color: #f5f5f7; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 13.33px; }
+    a { color: #b6ff00; text-decoration: none; } a:hover { color: #ceff59; }
+    * { box-sizing: border-box; }
+    .pad {
+      position: relative; width: 100px; height: 140px; border-radius: 10px;
+      background: #1e1e1e; color: #ffffff; box-shadow: 0 0 0 1.2px #c9d400;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 17.33px; line-height: 1;
+      cursor: pointer; user-select: none; -webkit-user-select: none; touch-action: none;
+      transition: background-color 140ms linear, color 140ms linear, box-shadow 140ms linear;
+    }
+    .pad.is-down { background: #c9d400; color: #000000; box-shadow: 0 0 0 2.2px #c9d400, 0 0 0 3px rgba(201, 212, 0, 0.09), 0 0 0 6px rgba(201, 212, 0, 0.18); transition-duration: 0ms; }
+    .label { position: relative; z-index: 1; }
+
+    .pad.is-down { animation: pop .45s linear both; }
+    @keyframes pop {
+      0%   { transform: scale(1); }
+      35%  { transform: scale(.95); }
+      70%  { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+    .burst { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; z-index: 2; }
+    .spark {
+      position: absolute; left: -4.5px; top: -4.5px; width: 9px; height: 9px; border-radius: 50%;
+      background: #000000; animation: spark .7s cubic-bezier(.33,0,.67,1) forwards;
+    }
+    .spark:nth-child(1) { --a: 0deg; }    .spark:nth-child(2) { --a: 36deg; }
+    .spark:nth-child(3) { --a: 72deg; }   .spark:nth-child(4) { --a: 108deg; }
+    .spark:nth-child(5) { --a: 144deg; }  .spark:nth-child(6) { --a: 180deg; }
+    .spark:nth-child(7) { --a: 216deg; }  .spark:nth-child(8) { --a: 252deg; }
+    .spark:nth-child(9) { --a: 288deg; }  .spark:nth-child(10) { --a: 324deg; }
+    .spark:nth-child(even) { background: #ffffff; width: 6.3px; height: 6.3px; left: -3.15px; top: -3.15px; }
+    @keyframes spark {
+      0%   { transform: rotate(var(--a)) translateX(15px) scale(1); opacity: 1; }
+      55%  { opacity: 1; }
+      100% { transform: rotate(var(--a)) translateX(55px) scale(0); opacity: 0; }
+    }
+  </style>
+</helmet>
+<div style="width: 560px; height: 300px; background: #0c0c0e; position: relative; overflow: hidden; display: flex; flex-direction: column;"><div style="height: 236px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;"><div class="pad {{ cls }}" onPointerDown="{{ down }}" onPointerUp="{{ up }}" onPointerLeave="{{ up }}" onPointerCancel="{{ up }}"><span class="label">Space</span><sc-if value="{{ burst }}" hint-placeholder-val="{{ false }}"><span class="burst"><span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span></span></sc-if></div><div style="color: #a1a1a6; font-size: 10.67px;">hold or tap</div></div><div style="display: flex; flex-direction: column; gap: 3px; padding: 0 20px 14px 20px;"><div style="font-size: 14.67px; font-weight: 600;">Burst</div><div style="color: #a1a1a6; font-size: 10.67px;">The pad pops and scatters sparks across its face, then sits lit while held. Trade-off: busy during fast combos, and the sparks stay near the pad so they are not clipped.</div></div></div>
+</x-dc>
+<script data-dc-script data-props='{"$preview": {"width": 560, "height": 300}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { phase: 'idle', burst: false };
+    this.t = null;
+    this.tb = null;
+  }
+  componentWillUnmount() {
+    clearTimeout(this.t);
+    clearTimeout(this.tb);
+  }
+  renderVals() {
+    const ph = this.state.phase;
+    return {
+      cls: ph === 'down' ? 'is-down' : ph === 'up' ? 'is-up' : '',
+      burst: this.state.burst,
+      down: (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        clearTimeout(this.t);
+        clearTimeout(this.tb);
+        this.setState({ phase: 'down', burst: true });
+        this.tb = setTimeout(() => this.setState({ burst: false }), 720);
+      },
+      up: () => {
+        if (this.state.phase !== 'down') return;
+        this.setState({ phase: 'up' });
+        clearTimeout(this.t);
+        this.t = setTimeout(() => this.setState({ phase: 'idle' }), 150);
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>
