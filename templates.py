@@ -381,7 +381,7 @@ def azeron_profile(model="Cyborg II"):
 
 # ---- controllers -------------------------------------------------------------
 def _controller(names):
-    """Shared Xbox/PlayStation geometry; `names` maps logical inputs to labels."""
+    """Grid controller geometry (PlayStation); `names` maps logical inputs to labels."""
     n = names
     keys = [
         {"label": n["lt"], "col": 0.6, "row": 0, "w": 2.2, "h": 0.9, "axis": "gp:lefttrigger", "input": "gp:lefttrigger"},
@@ -423,11 +423,68 @@ def _controller(names):
     }
 
 
-XBOX = {"lt": "LT", "rt": "RT", "lb": "LB", "rb": "RB", "back": "View", "start": "Menu",
-        "guide": "ⓧ", "y": "Y", "x": "X", "b": "B", "a": "A", "misc1": "Share"}
 PLAYSTATION = {"lt": "L2", "rt": "R2", "lb": "L1", "rb": "R1", "back": "Create", "start": "Options",
                "guide": "PS", "y": "△", "x": "□", "b": "○", "a": "✕",
                "touchpad": "Touchpad"}
+
+
+# ---- Xbox: a fixed drawing, not a grid ----------------------------------------
+# Geometry from the approved mockup (docs/superpowers/specs/2026-09-13-xbox-silhouette-design.md),
+# authored in a 400 x 372 unit frame at 20 units per cell. The col/row values only
+# feed cell_rect; the layout is locked, so nobody edits them.
+XBOX_TEMPLATES = ["Xbox Wireless", "Xbox Elite Series 2"]
+XBOX_CELL = 20
+XBOX_BACK_COL = 22.5  # the back body starts here: one body width plus a 50-unit gap
+
+
+def _u(x, y, w, h, **extra):
+    """A pad in unit coordinates -> cell coordinates."""
+    d = {"col": round(x / XBOX_CELL, 3), "row": round(y / XBOX_CELL, 3),
+         "w": round(w / XBOX_CELL, 3), "h": round(h / XBOX_CELL, 3)}
+    d.update(extra)
+    return d
+
+
+def _circle(cx, cy, r, label, inp):
+    return _u(cx - r, cy - r, 2 * r, 2 * r, label=label, shape="circle", input=inp)
+
+
+def xbox_profile(elite=False):
+    """Xbox Wireless, or Elite Series 2 with a second body for the four rear paddles."""
+    keys = [
+        _u(70, 30, 64, 22, label="LT", axis="gp:lefttrigger", input="gp:lefttrigger"),
+        _u(266, 30, 64, 22, label="RT", axis="gp:righttrigger", input="gp:righttrigger"),
+        _u(70, 60, 64, 18, label="LB", input="gp:leftshoulder"),
+        _u(266, 60, 64, 18, label="RB", input="gp:rightshoulder"),
+        _circle(200, 104, 17, "ⓧ", "gp:guide"),
+        _u(150, 132, 28, 18, label="View", input="gp:back"),
+        _u(222, 132, 28, 18, label="Menu", input="gp:start"),
+        _u(184, 166, 32, 16, label="Profile", input="") if elite
+        else _u(184, 166, 32, 16, label="Share", input="gp:misc1"),
+        _circle(306, 100, 16, "Y", "gp:y"),
+        _circle(276, 134, 16, "X", "gp:x"),
+        _circle(336, 134, 16, "B", "gp:b"),
+        _circle(306, 168, 16, "A", "gp:a"),
+    ]
+    sticks = [
+        _u(60, 108, 64, 64, label="L", axes=["gp:leftx", "gp:lefty"], click="gp:leftstick"),
+        _u(120, 180, 52, 52, label="", up="gp:dpup", down="gp:dpdown", left="gp:dpleft", right="gp:dpright"),
+        _u(224, 174, 64, 64, label="R", axes=["gp:rightx", "gp:righty"], click="gp:rightstick"),
+    ]
+    decor = [_u(0, 0, 400, 372, kind="xbox_front")]
+    if elite:
+        bx = XBOX_BACK_COL * XBOX_CELL
+        decor.append(_u(bx, 0, 400, 372, kind="xbox_back"))
+        for label, cx, cy, w, h, shape in (("P1", 168, 268, 20, 70, "paddle_l"), ("P2", 128, 302, 18, 50, "paddle_l"),
+                                           ("P3", 232, 268, 20, 70, "paddle_r"), ("P4", 272, 302, 18, 50, "paddle_r")):
+            keys.append(_u(bx + cx - w / 2, cy - h / 2, w, h, label=label, shape=shape,
+                           input=f"gp:paddle{label[1]}", editable=True))
+    return {
+        "cell_w": XBOX_CELL, "cell_h": XBOX_CELL, "gap": 0, "scale": 0.8, "shape": "rect",
+        "locked": True, "stick_box": False,
+        "font": {"family": "Segoe UI", "size": 9, "bold": True},
+        "keys": keys, "sticks": sticks, "decor": decor,
+    }
 
 
 # ---- mice --------------------------------------------------------------------
@@ -485,6 +542,8 @@ def templates_for(device):
         return [name for name, _ in AZERON_MODELS]
     if device == "Mouse":
         return [name for name, _ in MICE]
+    if device == "Xbox controller":
+        return list(XBOX_TEMPLATES)
     return [device]
 
 
@@ -499,7 +558,7 @@ def build(device, template=None, layout=None):
     if device == "Mouse":
         return mouse_profile(template or MICE[0][0])
     if device == "Xbox controller":
-        return _controller(XBOX)
+        return xbox_profile(elite=template == XBOX_TEMPLATES[1])
     if device == "PlayStation controller":
         return _controller(PLAYSTATION)
     if template in dict(AZERON_MODELS):
@@ -514,4 +573,6 @@ def suggested_name(device, template=None, layout=None):
         return f"Azeron {template}"
     if device == "Mouse":
         return f"Mouse – {template}"
+    if device == "Xbox controller":
+        return template or XBOX_TEMPLATES[0]
     return device

@@ -67,7 +67,7 @@ def ensure_user_data():
 
 # What a saved layout profile carries (hotkeys and app theme stay global).
 PROFILE_KEYS = ("x", "y", "scale", "opacity", "cell_w", "cell_h", "gap", "shape",
-                "pad_style", "stick_style", "stick_box", "colors", "font", "keys", "sticks", "decor")
+                "pad_style", "stick_style", "stick_box", "colors", "font", "keys", "sticks", "decor", "locked")
 
 # How keys and buttons are drawn; the idle/pressed colors apply to every style.
 PAD_STYLES = ("classic", "outline", "keycap", "underline", "pill")
@@ -277,6 +277,7 @@ def migrate(cfg):
         cfg["stick_style"] = "classic"
     cfg["stick_box"] = bool(cfg.get("stick_box", True))
     cfg.setdefault("decor", [])  # silhouettes drawn behind the pads, e.g. a mouse body
+    cfg["locked"] = bool(cfg.get("locked", False))  # fixed drawing: geometry and structure are not edited
     for k in cfg.get("keys", []):
         k.setdefault("w", 1)
         k.setdefault("h", 1)
