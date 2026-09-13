@@ -796,3 +796,57 @@ def test_color_button_uses_the_app_picker_and_cancel_restores(editor, monkeypatc
     monkeypatch.setattr(settings_ui.ColorPickerDialog, "exec", lambda dlg: (dlg.hex.setText("#123456"), settings_ui.QDialog.DialogCode.Accepted)[1])
     button.pick()
     assert editor.cfg["colors"][button.key] == "#123456"
+
+
+def _load_xbox(editor, elite):
+    editor.cfg.update(templates.build("Xbox controller", "Xbox Elite Series 2" if elite else "Xbox Wireless"))
+    editor._rebuild_tabs()
+
+
+def test_locked_layout_hides_geometry_and_structure(editor):
+    _load_xbox(editor, elite=False)
+    assert editor.locked
+    assert all(editor.table.isColumnHidden(c) for c in (2, 3, 4, 5))
+    assert all(editor.stick_table.isColumnHidden(c) for c in (5, 6, 7, 8))
+    assert editor.show_geometry.isHidden()
+    for b in (editor.btn_add_pad, editor.btn_add_row, editor.btn_add_column,
+              editor.btn_add_wasd, editor.btn_add_analog, editor.btn_add_dpad, editor.btn_remove_stick):
+        assert not b.isEnabled(), b.text()
+    assert not editor.key_dimensions.isEnabled()
+    editor.table.selectRow(0)
+    assert not editor.btn_remove_pad.isEnabled()
+    assert not editor.btn_delete_row.isEnabled()
+    assert not editor.btn_delete_column.isEnabled()
+    assert not editor.btn_capture.isEnabled()
+    item = editor.table.item(0, 1)
+    assert not item.flags() & Qt.ItemFlag.ItemIsEditable
+    before = len(editor.cfg["keys"])
+    editor._delete_pads([0])
+    editor._add_pad()
+    assert len(editor.cfg["keys"]) == before
+
+
+def test_elite_paddles_are_the_only_editable_pads(editor):
+    _load_xbox(editor, elite=True)
+    rows = {editor.table.item(r, 0).text(): r for r in range(editor.table.rowCount())}
+    for label in ("A", "LT", "Profile"):
+        editor.table.selectRow(rows[label])
+        assert not editor.btn_capture.isEnabled(), label
+        assert not editor.table.item(rows[label], 1).flags() & Qt.ItemFlag.ItemIsEditable
+    editor.table.selectRow(rows["P2"])
+    assert editor.btn_capture.isEnabled()
+    assert editor.table.item(rows["P2"], 0).flags() & Qt.ItemFlag.ItemIsEditable
+    assert editor.table.item(rows["P2"], 1).flags() & Qt.ItemFlag.ItemIsEditable
+    editor.btn_capture.setChecked(True)
+    assert editor.overlay.capturing
+    editor._on_key_captured("gp:a")
+    assert editor.cfg["keys"][rows["P2"]]["input"] == "gp:a"
+    assert editor.cfg["keys"][rows["P2"]]["label"] == "P2"  # a custom label survives a rebind
+
+
+def test_unlocked_layout_is_unchanged(editor):
+    assert not editor.locked
+    assert editor.btn_add_pad.isEnabled() and editor.key_dimensions.isEnabled()
+    editor.table.selectRow(0)
+    assert editor.btn_capture.isEnabled() and editor.btn_remove_pad.isEnabled()
+    assert editor.table.item(0, 1).flags() & Qt.ItemFlag.ItemIsEditable

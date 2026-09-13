@@ -1225,6 +1225,10 @@ class SettingsWindow(QWidget):
         f2.addRow("Height", stepper(self.sp_ch))
         f2.addRow("Gap", stepper(self.sp_gap))
         l2.addLayout(f2)
+        self.key_dimensions = c2
+        c2.setEnabled(not self.locked)
+        if self.locked:
+            c2.setToolTip("This layout is a fixed drawing. Use Size on this page to scale it.")
 
         c3, l3 = card()
         l3.addWidget(section("Hotkeys"))
@@ -1338,7 +1342,7 @@ class SettingsWindow(QWidget):
         self.btn_capture.setCheckable(True)
         self.btn_capture.setToolTip("Select a pad, then record a key or controller button. Click again to cancel.")
         self.btn_capture.toggled.connect(self._toggle_capture)
-        btn_add = QPushButton("Add pad")
+        btn_add = self.btn_add_pad = QPushButton("Add pad")
         btn_add.clicked.connect(self._add_pad)
         self.btn_add_row = QPushButton("Add row")
         self.btn_add_row.setToolTip("Add a row of blank pads below the layout, spanning its pad columns.")
@@ -1358,6 +1362,11 @@ class SettingsWindow(QWidget):
         self.show_geometry.toggled.connect(self._show_key_geometry)
         l1.addWidget(self.show_geometry)
         self._show_key_geometry(False)
+        if self.locked:
+            self.show_geometry.hide()
+            for b in (self.btn_add_pad, self.btn_add_row, self.btn_add_column):
+                b.setEnabled(False)
+                b.setToolTip("This layout is a fixed drawing; pads cannot be added.")
         self.table.itemSelectionChanged.connect(self._pad_selection_changed)
 
         c2, l2 = card()
@@ -1379,13 +1388,13 @@ class SettingsWindow(QWidget):
         self.stick_table.itemChanged.connect(self._stick_edited)
         l2.addWidget(self.stick_table)
         srow = QHBoxLayout()
-        b_add_keys = QPushButton("Add WASD stick")
+        b_add_keys = self.btn_add_wasd = QPushButton("Add WASD stick")
         b_add_keys.clicked.connect(lambda: self._add_stick("keys"))
-        b_add_analog = QPushButton("Add analog stick")
+        b_add_analog = self.btn_add_analog = QPushButton("Add analog stick")
         b_add_analog.clicked.connect(lambda: self._add_stick("analog"))
-        b_add_dpad = QPushButton("Add d-pad")
+        b_add_dpad = self.btn_add_dpad = QPushButton("Add d-pad")
         b_add_dpad.clicked.connect(lambda: self._add_stick("dpad"))
-        b_del = QPushButton("Remove")
+        b_del = self.btn_remove_stick = QPushButton("Remove")
         b_del.setObjectName("quiet")
         b_del.clicked.connect(self._remove_stick)
         for b in (b_add_keys, b_add_analog, b_add_dpad):
@@ -1393,6 +1402,13 @@ class SettingsWindow(QWidget):
         srow.addStretch(1)
         srow.addWidget(b_del)
         l2.addLayout(srow)
+        if self.locked:
+            for c in range(5, 9):
+                self.stick_table.setColumnHidden(c, True)
+            for b in (self.btn_add_wasd, self.btn_add_analog, self.btn_add_dpad, self.btn_remove_stick):
+                b.setEnabled(False)
+                b.setToolTip("This layout is a fixed drawing; sticks cannot change.")
+            self.stick_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.joy_edits = {}  # kept for older callers; sticks are edited in the table now
         self._fill_sticks()
         self._fill_table()
@@ -1728,6 +1744,15 @@ class SettingsWindow(QWidget):
         self._schedule_save()
 
     # keys table
+    @property
+    def locked(self):
+        """A fixed drawing (Xbox templates): no geometry, no adding or removing pads."""
+        return bool(self.cfg.get("locked"))
+
+    def _pad_editable(self, index):
+        """Label and input of this pad may change: any pad on a free layout, flagged pads on a locked one."""
+        return not self.locked or bool(self.cfg["keys"][index].get("editable"))
+
     def selected_pads(self):
         """Indices into the layout's pad list, in table order."""
         return sorted(i.row() for i in self.table.selectionModel().selectedRows())
@@ -1790,11 +1815,13 @@ class SettingsWindow(QWidget):
         rows = self.selected_pads()
         self.pad_layout.selected = set(rows)
         self.pad_layout.update()
-        self.btn_capture.setEnabled(len(rows) == 1)
-        self.btn_remove_pad.setEnabled(bool(rows))
+        editable = len(rows) == 1 and self._pad_editable(rows[0])
+        self.btn_capture.setEnabled(editable)
+        structural = bool(rows) and not self.locked
+        self.btn_remove_pad.setEnabled(structural)
         self.btn_remove_pad.setText(f"Remove {len(rows)} pads" if len(rows) > 1 else "Remove")
-        self.btn_delete_row.setEnabled(bool(rows))
-        self.btn_delete_column.setEnabled(bool(rows))
+        self.btn_delete_row.setEnabled(structural)
+        self.btn_delete_column.setEnabled(structural)
         self.selection_bar.setVisible(bool(rows))
         if len(rows) == 1:
             label = self.cfg["keys"][rows[0]].get("label") or "Untitled pad"
@@ -1828,6 +1855,10 @@ class SettingsWindow(QWidget):
                 inp.setForeground(QColor(theme_colors(self.cfg)["muted"]))
                 inp.setToolTip("Physical key (scancode). Type a key name to override.")
             self.table.setItem(r, 1, inp)
+            if not self._pad_editable(r):
+                for c in (0, 1):
+                    it = self.table.item(r, c)
+                    it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
             for c, key in ((2, "col"), (3, "row"), (4, "w"), (5, "h")):
                 it = QTableWidgetItem(self._num(k.get(key, 1)))
                 it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1882,6 +1913,8 @@ class SettingsWindow(QWidget):
         self._show_error(msg)
 
     def _add_pad(self):
+        if self.locked:
+            return
         self.key_search.clear()
         used = {(k["col"], k["row"]) for k in self.cfg["keys"]}
         col = row = 0
@@ -1896,6 +1929,8 @@ class SettingsWindow(QWidget):
 
     def _add_pad_line(self, axis):
         """Append unit pads beyond the layout bounds without copying bindings."""
+        if self.locked:
+            return
         self.btn_capture.setChecked(False)
         self.key_search.clear()
         keys = self.cfg["keys"]
@@ -1923,6 +1958,8 @@ class SettingsWindow(QWidget):
 
     def _delete_pads(self, indices):
         """Remove these pads; every other pad keeps its coordinates. Undoable once."""
+        if self.locked:
+            return
         rows = sorted(set(indices))
         if not rows:
             return
@@ -1951,9 +1988,11 @@ class SettingsWindow(QWidget):
         return rows[0] if len(rows) == 1 else None
 
     def _toggle_capture(self, on):
-        if on and self._capture_target() is None:
+        target = self._capture_target()
+        if on and (target is None or not self._pad_editable(target)):
             self.btn_capture.setChecked(False)
-            self._show_error("Select one pad first")
+            self._show_error("Select one pad first" if target is None
+                             else "This pad is part of the drawing; only the paddles can be changed")
             return
         self.overlay.capturing = on
         self.btn_capture.setText("Cancel recording" if on else "Record input")
@@ -2026,6 +2065,8 @@ class SettingsWindow(QWidget):
         self._apply()
 
     def _add_stick(self, kind):
+        if self.locked:
+            return
         base = {"label": "", "col": 0, "row": 0, "w": 2, "h": 2}
         if kind == "keys":
             base.update(label="WASD", up="W", down="S", left="A", right="D")
@@ -2038,6 +2079,8 @@ class SettingsWindow(QWidget):
         self._apply()
 
     def _remove_stick(self):
+        if self.locked:
+            return
         r = self.stick_table.currentRow()
         if r < 0:
             return
