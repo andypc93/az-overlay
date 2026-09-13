@@ -850,3 +850,17 @@ def test_unlocked_layout_is_unchanged(editor):
     editor.table.selectRow(0)
     assert editor.btn_capture.isEnabled() and editor.btn_remove_pad.isEnabled()
     assert editor.table.item(0, 1).flags() & Qt.ItemFlag.ItemIsEditable
+
+
+# ---- release 1.0: version ------------------------------------------------------
+def test_about_page_shows_the_version_and_a_releases_link(editor, monkeypatch):
+    import version
+    about = editor.stack.widget(editor.PAGES.index("About"))
+    text = " ".join(lbl.text() for lbl in about.findChildren(settings_ui.QLabel))
+    assert f"Version {version.__version__}" in text
+    button = next(b for b in about.findChildren(settings_ui.QPushButton) if b.text() == "Check for updates")
+    opened = []
+    monkeypatch.setattr(settings_ui.QDesktopServices, "openUrl", lambda url: opened.append(url.toString()) or True)
+    button.click()
+    assert opened == [settings_ui.RELEASES_URL]
+    assert settings_ui.RELEASES_URL.startswith("https://github.com/")

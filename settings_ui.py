@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 import templates
 from gamepad import is_gamepad_input
+from version import __version__
 from overlay import (APP_NAME, DEFAULT_COLORS, GAMEPAD_LABELS, PAD_STYLES, PROFILE_KEYS, STICK_STYLES, delete_profile,
                      create_profile, layout_name_taken, pads_in_row_or_column, rename_profile, sanitise_layout_name,
                      seed_default_layouts,
@@ -31,6 +32,7 @@ PAD_SHAPES = (("rect", "Rounded"), ("circle", "Circle"))
 # Set these to the creator's payment links to enable donations.
 PAYPAL_DONATION_URL = ""
 VENMO_DONATION_URL = "https://venmo.com/andrespc93"
+RELEASES_URL = "https://github.com/andypc93/az-overlay/releases"
 
 # Theme colors belong to the editor; overlay colors remain part of each layout.
 THEMES = {
@@ -1537,6 +1539,15 @@ class SettingsWindow(QWidget):
             "A customizable input overlay for Azeron keypads, keyboards, and controllers. "
             "Show your inputs as you play with a transparent, click-through overlay "
             "and live layout editing."))
+        overview_layout.addWidget(muted(f"Version {__version__}"))
+        updates = QPushButton("Check for updates")
+        updates.setCursor(Qt.CursorShape.PointingHandCursor)
+        updates.setToolTip("Open the releases page in your browser")
+        updates.clicked.connect(self._open_releases)
+        updates_row = QHBoxLayout()
+        updates_row.addWidget(updates)
+        updates_row.addStretch(1)
+        overview_layout.addLayout(updates_row)
 
         credits, credits_layout = card()
         credits_layout.addWidget(section("Created by Andres Perez"))
@@ -1568,6 +1579,12 @@ class SettingsWindow(QWidget):
             QMessageBox.information(
                 self, f"Open {provider}",
                 f"Could not open your browser. Visit this link to donate:\n{url}")
+
+    def _open_releases(self):
+        if not QDesktopServices.openUrl(QUrl(RELEASES_URL)):
+            QMessageBox.information(
+                self, "Check for updates",
+                f"Could not open your browser. Visit this link to see releases:\n{RELEASES_URL}")
 
     def _help_page(self):
         contact, contact_layout = card()

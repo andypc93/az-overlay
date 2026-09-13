@@ -27,6 +27,7 @@ from PySide6.QtGui import QAction, QBrush, QColor, QFont, QFontMetrics, QFontMet
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
 
 from gamepad import Gamepad, is_gamepad_input
+from version import __version__
 
 APP_NAME = "AZ-Overlay"
 
@@ -1464,6 +1465,7 @@ def main():
     app.setStyle("Fusion")  # consistent widget rendering; stylesheet in settings_ui relies on it
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName(APP_NAME)
+    app.setApplicationVersion(__version__)
     icon = app_icon()
     app.setWindowIcon(icon)
 
