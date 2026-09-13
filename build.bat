@@ -5,4 +5,8 @@ python -m PyInstaller --noconfirm --onefile --noconsole --name AZ-Overlay --icon
   --version-file build\version_info.txt ^
   --add-data "config.json;." --add-data "profiles;profiles" --add-data "assets;assets" ^
   --hidden-import pygame._sdl2.controller overlay.py
+if errorlevel 1 (
+  echo Build failed. Is AZ-Overlay.exe still running?
+  exit /b 1
+)
 echo Built dist\AZ-Overlay.exe  (settings live in %%APPDATA%%\az-overlay, untouched by rebuilds)

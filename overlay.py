@@ -48,11 +48,11 @@ CONFIG_PATH = os.path.join(_BASE, "config.json")
 PROFILE_DIR = os.path.join(_BASE, "profiles")
 LOGO_PATH = os.path.join(_DEFAULTS, "assets", "logo_256.png")
 CONFIG_BACKUP_SUFFIX = ".bak"
-# Set by load_config() when config.json was unreadable and moved aside; main()
-# tells the user once. None after a clean load.
+# Set by load_config() when config.json was unreadable and copied to config.json.bak;
+# main() tells the user once. None after a clean load.
 RECOVERED_CONFIG_BACKUP = None
 
-_log = logging.getLogger("az.config")
+_log = logging.getLogger("az")
 
 
 def ensure_user_data():
@@ -1482,23 +1482,20 @@ def app_icon(color="#c9d400"):
     return QIcon(pm)
 
 
-LOG_PATH = None  # set by main()
-
-
 def recovery_message(backup_path):
-    """Tray balloon shown once after config.json had to be moved aside. Layouts
+    """Tray balloon shown once after config.json had to be copied aside. Layouts
     live in their own files and are untouched, so only globals were reset."""
     return (f"{APP_NAME} settings were reset",
-            f"config.json could not be read. Hotkeys and theme are back to defaults; "
-            f"your layouts are untouched. The old file is saved as {os.path.basename(backup_path)}.")
+            f"config.json could not be read. Hotkeys, theme, and which layout opens are back to "
+            f"defaults; your layouts themselves are untouched. "
+            f"The old file is saved as {os.path.basename(backup_path)}.")
 
 
 def main():
-    global LOG_PATH
     ensure_user_data()
-    LOG_PATH = applog.setup(_BASE)
+    applog.setup(_BASE)
     applog.install_excepthook()
-    logging.getLogger("az").info("%s %s starting (frozen=%s, data=%s)", APP_NAME, __version__, FROZEN, _BASE)
+    _log.info("%s %s starting (frozen=%s, data=%s)", APP_NAME, __version__, FROZEN, _BASE)
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")  # consistent widget rendering; stylesheet in settings_ui relies on it
@@ -1510,7 +1507,7 @@ def main():
 
     instance = SingleInstance(instance_name(), app)
     if not instance.acquire():
-        logging.getLogger("az").info("Another copy is running; asked it to show settings and exiting")
+        _log.info("Another copy is running; asked it to show settings and exiting")
         sys.exit(0)
 
     cfg = load_config()

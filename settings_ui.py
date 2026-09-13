@@ -1574,17 +1574,17 @@ class SettingsWindow(QWidget):
         donations_layout.addLayout(donation_buttons)
         return self._page("About", "Every move. On display.", overview, credits, donations)
 
+    def _open_url(self, url, title, hint):
+        """Open a link in the browser; if that fails, show the link so it can be copied."""
+        if not QDesktopServices.openUrl(QUrl(url)):
+            QMessageBox.information(self, title, f"Could not open your browser. {hint}\n{url}")
+
     def _open_donation(self, provider, url):
-        if url and not QDesktopServices.openUrl(QUrl(url)):
-            QMessageBox.information(
-                self, f"Open {provider}",
-                f"Could not open your browser. Visit this link to donate:\n{url}")
+        if url:
+            self._open_url(url, f"Open {provider}", "Visit this link to donate:")
 
     def _open_releases(self):
-        if not QDesktopServices.openUrl(QUrl(RELEASES_URL)):
-            QMessageBox.information(
-                self, "Check for updates",
-                f"Could not open your browser. Visit this link to see releases:\n{RELEASES_URL}")
+        self._open_url(RELEASES_URL, "Check for updates", "Visit this link to see releases:")
 
     def _help_page(self):
         contact, contact_layout = card()

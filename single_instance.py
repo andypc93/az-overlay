@@ -4,17 +4,20 @@ its settings window. Connecting is the whole message: nothing is written, since
 a socket that is destroyed right after acquire() returns never flushes."""
 
 import getpass
+import logging
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 _CONNECT_MS = 500
 
+_log = logging.getLogger("az.instance")
+
 
 def default_name():
     try:
         user = getpass.getuser()
-    except Exception:  # no user name available: still unique enough per machine
+    except (OSError, KeyError):  # no user name available: still unique enough per machine
         user = "user"
     return f"az-overlay-{user}"
 
@@ -38,7 +41,12 @@ class SingleInstance(QObject):
         QLocalServer.removeServer(self._name)  # a crashed copy may have left the name behind
         self._server = QLocalServer(self)
         self._server.newConnection.connect(self._on_connection)
-        return self._server.listen(self._name)
+        if not self._server.listen(self._name):
+            # Nobody answered, yet the name cannot be claimed either (permissions, a
+            # foreign pipe). Running is better than exiting silently.
+            _log.warning("Could not claim %s (%s); running without the single-instance guard",
+                         self._name, self._server.errorString())
+        return True
 
     def _on_connection(self):
         while self._server.hasPendingConnections():

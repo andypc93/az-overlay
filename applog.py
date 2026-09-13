@@ -6,6 +6,7 @@ import logging
 import logging.handlers
 import os
 import sys
+import threading
 
 LOG_NAME = "az-overlay.log"
 _MAX_BYTES = 512 * 1024
@@ -30,19 +31,37 @@ def setup(log_dir):
     handler.setFormatter(logging.Formatter(_FORMAT))
     handler._az_log = True
     root.addHandler(handler)
-    root.setLevel(logging.INFO)
+    # Our own loggers at INFO; libraries only when something is wrong, so the
+    # file stays readable.
+    root.setLevel(logging.WARNING)
+    logging.getLogger("az").setLevel(logging.INFO)
     return path
+
+
+def flush():
+    for h in logging.getLogger().handlers:
+        h.flush()
 
 
 def install_excepthook():
     """Log uncaught exceptions with their traceback, then hand off to whatever
-    hook was there (the default prints to stderr, which the exe has none of)."""
+    hook was there (the default prints to stderr, which the exe has none of).
+    Covers the main thread and every other thread: the pynput listeners run
+    their callbacks on threads of their own, and a crash there would otherwise
+    stop the overlay reacting with nothing in the log."""
     previous = sys.excepthook
+    previous_thread = threading.excepthook
 
     def hook(exc_type, exc, tb):
         _log.critical("Unhandled exception", exc_info=(exc_type, exc, tb))
-        for h in logging.getLogger().handlers:
-            h.flush()
+        flush()
         previous(exc_type, exc, tb)
 
+    def thread_hook(args):
+        _log.critical("Unhandled exception on thread %s", args.thread.name if args.thread else "?",
+                      exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+        flush()
+        previous_thread(args)
+
     sys.excepthook = hook
+    threading.excepthook = thread_hook

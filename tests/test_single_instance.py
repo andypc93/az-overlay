@@ -46,3 +46,9 @@ def test_default_name_is_per_user():
     name = single_instance.default_name()
     assert name.startswith("az-overlay-")
     assert len(name) > len("az-overlay-")
+
+
+def test_listen_failure_still_lets_this_copy_run(app, monkeypatch):
+    name = f"az-overlay-test-{uuid.uuid4().hex}"
+    monkeypatch.setattr(QLocalServer, "listen", lambda self, n: False)
+    assert single_instance.SingleInstance(name).acquire() is True
